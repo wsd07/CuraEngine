@@ -143,7 +143,8 @@ if "%PUSH_SOURCE%"=="true" (
     git add .
 
     echo Step 5: Committing changes...
-    set /p commit_msg="Enter commit message (or press Enter for default): "
+    echo Enter commit message ^(or press Enter for default^):
+    set /p "commit_msg="
     if "!commit_msg!"=="" (
         set "commit_msg=Update CuraEngine source - %date% %time%"
     )
