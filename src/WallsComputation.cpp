@@ -19,6 +19,8 @@
 #include "settings/types/Ratio.h"
 #include "sliceDataStorage.h"
 #include "utils/Simplify.h" // We're simplifying the spiralized insets.
+#include <spdlog/spdlog.h>
+#include "utils/math.h" // For INT2MM2
 
 namespace cura
 {
@@ -117,12 +119,82 @@ void WallsComputation::generateWalls(SliceLayer* layer, SectionType section)
 
 void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall)
 {
-    part->spiral_wall = part->outline.offset(-line_width_0 / 2 - wall_0_inset);
+    // === 检查是否启用only_spiralize_out_surface功能 ===
+    // 当启用时，只保留最外层的多边形，舍弃内部的多边形
+    // 如果参数未设置，默认为false（保持原有行为）
+    bool only_spiralize_out_surface = false;
+    try {
+        only_spiralize_out_surface = settings_.get<bool>("only_spiralize_out_surface");
+    } catch (...) {
+        // 参数未设置，使用默认值false
+        only_spiralize_out_surface = false;
+    }
 
-    // Optimize the wall. This prevents buffer underruns in the printer firmware, and reduces processing time in CuraEngine.
+    Shape spiral_outline = part->outline;
+
+    // 添加调试信息，显示当前处理的多边形数量
+    spdlog::debug("generateSpiralInsets: only_spiralize_out_surface={}, 多边形数量={}",
+                 only_spiralize_out_surface, spiral_outline.size());
+
+    // === 核心功能：only_spiralize_out_surface多边形筛选 ===
+    // 当启用此功能且当前层有多个多边形时，只保留最外层的多边形
+    // 这对于有内部孔洞或复杂截面的模型特别有用，可以简化螺旋路径
+    if (only_spiralize_out_surface && spiral_outline.size() > 1)
+    {
+        // 输出功能启用信息和原始状态
+        spdlog::info("=== only_spiralize_out_surface功能启用 ===");
+        spdlog::info("原始多边形数量: {}", spiral_outline.size());
+
+        // === 算法：基于面积大小识别最外层多边形 ===
+        // 原理：在3D切片中，最外层的轮廓通常具有最大的面积
+        // 注意：在Cura的坐标系统中：
+        //   - 外轮廓（实体边界）：逆时针方向，面积为正值
+        //   - 内轮廓（孔洞）：顺时针方向，面积为负值
+        // 我们使用绝对值来比较，确保能正确识别最大的轮廓
+        coord_t max_area = 0;        // 记录找到的最大面积
+        size_t max_area_index = 0;   // 记录最大面积多边形的索引
+
+        // 遍历所有多边形，计算面积并找到最大的
+        for (size_t i = 0; i < spiral_outline.size(); ++i)
+        {
+            // 计算当前多边形的面积（使用绝对值处理正负面积）
+            coord_t area = std::abs(spiral_outline[i].area());
+
+            // 输出每个多边形的详细信息用于调试
+            spdlog::debug("多边形[{}]: 面积={:.2f}mm², 顶点数={}",
+                         i, INT2MM2(area), spiral_outline[i].size());
+
+            // 更新最大面积记录
+            if (area > max_area)
+            {
+                max_area = area;
+                max_area_index = i;
+            }
+        }
+
+        // === 执行筛选：只保留面积最大的多边形 ===
+        // 这个多边形通常就是模型的最外层轮廓
+        Polygon outer_polygon = spiral_outline[max_area_index];
+        spiral_outline.clear();                    // 清空原有的所有多边形
+        spiral_outline.push_back(outer_polygon);   // 只添加最外层多边形
+
+        // 输出筛选结果的详细信息
+        spdlog::info("保留最外层多边形[{}]: 面积={:.2f}mm², 顶点数={}",
+                    max_area_index, INT2MM2(max_area), outer_polygon.size());
+        spdlog::info("过滤后多边形数量: {}", spiral_outline.size());
+
+        // 此时spiral_outline只包含一个多边形，即最外层的轮廓
+        // 这将简化后续的螺旋路径生成，避免复杂的内部结构
+    }
+
+    // 使用处理后的轮廓生成螺旋wall
+    part->spiral_wall = spiral_outline.offset(-line_width_0 / 2 - wall_0_inset);
+
+    // 优化wall路径，防止打印机固件缓冲区不足，并减少CuraEngine的处理时间
     const ExtruderTrain& train_wall = settings_.get<ExtruderTrain&>("wall_0_extruder_nr");
     part->spiral_wall = Simplify(train_wall.settings_).polygon(part->spiral_wall);
     part->spiral_wall.removeDegenerateVerts();
+
     if (recompute_outline_based_on_outer_wall)
     {
         part->print_outline = part->spiral_wall.offset(line_width_0 / 2, ClipperLib::jtSquare);

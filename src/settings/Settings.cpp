@@ -32,6 +32,9 @@
 #include "utils/Matrix4x3D.h"
 #include "utils/string.h" //For Escaped.
 #include "utils/types/string_switch.h" //For string switch.
+#include "geometry/Point3LL.h" //For Point3LL parsing.
+#include <regex>
+#include <sstream>
 
 namespace cura
 {
@@ -883,6 +886,48 @@ std::vector<std::string> Settings::getKeys() const
         return parent->getKeys();
     }
     return ranges::views::keys(settings) | ranges::to_vector;
+}
+
+template<>
+std::vector<Point3LL> Settings::get<std::vector<Point3LL>>(const std::string& key) const
+{
+    const std::string& value_string = get<std::string>(key);
+    std::vector<Point3LL> result;
+
+    if (value_string.empty() || value_string == "[]")
+    {
+        return result;
+    }
+
+    // 解析格式如 "[26.76,-13.01,39.92],[30.09,-6.34,40.11],[27.60,-12.13,49.20]"
+    // 使用正则表达式匹配 [x,y,z] 格式的坐标
+    std::regex point_regex(R"(\[([^,]+),([^,]+),([^\]]+)\])");
+    std::sregex_iterator iter(value_string.begin(), value_string.end(), point_regex);
+    std::sregex_iterator end;
+
+    for (; iter != end; ++iter)
+    {
+        const std::smatch& match = *iter;
+        if (match.size() == 4) // 完整匹配 + 3个捕获组
+        {
+            try
+            {
+                double x = std::stod(match[1].str());
+                double y = std::stod(match[2].str());
+                double z = std::stod(match[3].str());
+
+                // 转换为微米单位（CuraEngine内部使用微米）
+                result.emplace_back(MM2INT(x), MM2INT(y), MM2INT(z));
+            }
+            catch (const std::exception&)
+            {
+                // 忽略无法解析的点
+                continue;
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace cura

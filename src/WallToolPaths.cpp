@@ -131,6 +131,32 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     const Ratio wall_add_middle_threshold = std::max(1.0, std::min(99.0, 100.0 * min_odd_wall_line_width / wall_line_width_x)) / 100.0;
 
     const int wall_distribution_count = settings_.get<int>("wall_distribution_count");
+
+    // === 新增功能：获取beading_strategy_enable参数 ===
+    // 控制是否启用BeadingStrategy系统
+    bool beading_strategy_enable = true;  // 默认启用，保持向后兼容
+    try {
+        beading_strategy_enable = settings_.get<bool>("beading_strategy_enable");
+    } catch (...) {
+        // 参数未设置，使用默认值true
+        beading_strategy_enable = true;
+    }
+
+    // === 核心功能：beading_strategy_enable控制 ===
+    if (!beading_strategy_enable) {
+        // === 完全禁用BeadingStrategy，使用传统简单偏移算法 ===
+        spdlog::info("=== BeadingStrategy系统已完全禁用 ===");
+        spdlog::info("beading_strategy_enable=false，使用传统简单偏移算法");
+        spdlog::info("这将绕过所有复杂的线宽计算，使用固定线宽偏移");
+
+        generateSimpleWalls(prepared_outline);
+        return toolpaths_;
+    }
+
+    // === 原有BeadingStrategy路径 ===
+    spdlog::info("=== 使用BeadingStrategy系统 ===");
+    spdlog::info("beading_strategy_enable=true，启用复杂的线宽计算");
+
     const size_t max_bead_count = (inset_count_ < std::numeric_limits<size_t>::max() / 2) ? 2 * inset_count_ : std::numeric_limits<size_t>::max();
     const auto beading_strat = BeadingStrategyFactory::makeStrategy(
         bead_width_0_,
@@ -272,6 +298,88 @@ void WallToolPaths::stitchToolPaths(std::vector<VariableWidthLines>& toolpaths, 
         }
 #endif // DEBUG
     }
+}
+
+void WallToolPaths::generateSimpleWalls(const Shape& outline)
+{
+    // === 传统简单偏移算法实现 ===
+    // 完全绕过BeadingStrategy系统，使用固定线宽的简单偏移
+
+    spdlog::debug("=== 开始传统简单偏移算法 ===");
+    spdlog::debug("目标墙数: {}, 外墙线宽: {}, 内墙线宽: {}", inset_count_, bead_width_0_, bead_width_x_);
+
+    toolpaths_.clear();
+    toolpaths_.resize(inset_count_);
+
+    Shape current_outline = outline;
+
+    // 生成每一层墙
+    for (size_t wall_idx = 0; wall_idx < inset_count_; wall_idx++)
+    {
+        if (current_outline.empty())
+        {
+            spdlog::debug("第{}层墙：轮廓为空，停止生成", wall_idx);
+            break;
+        }
+
+        // 确定当前墙的线宽
+        coord_t current_line_width = (wall_idx == 0) ? bead_width_0_ : bead_width_x_;
+
+        // 计算偏移距离
+        coord_t offset_distance = current_line_width / 2;
+        if (wall_idx == 0 && wall_0_inset_ > 0)
+        {
+            offset_distance += wall_0_inset_;  // 外墙额外内缩
+        }
+
+        spdlog::debug("第{}层墙：线宽={}, 偏移距离={}", wall_idx, current_line_width, offset_distance);
+
+        // 为当前轮廓的每个多边形创建ExtrusionLine
+        for (const auto& polygon : current_outline)
+        {
+            if (polygon.size() < 3) continue;  // 跳过无效多边形
+
+            ExtrusionLine wall_line(wall_idx, false);  // inset_idx, is_odd
+
+            // 将多边形的每个点转换为ExtrusionJunction
+            for (size_t point_idx = 0; point_idx < polygon.size(); point_idx++)
+            {
+                ExtrusionJunction junction(polygon[point_idx], current_line_width, wall_idx);
+                wall_line.junctions_.emplace_back(junction);
+            }
+
+            // 闭合多边形
+            wall_line.is_closed_ = true;
+
+            if (!wall_line.junctions_.empty())
+            {
+                toolpaths_[wall_idx].emplace_back(std::move(wall_line));
+            }
+        }
+
+        // 为下一层墙计算新的轮廓（向内偏移）
+        current_outline = current_outline.offset(-offset_distance);
+
+        spdlog::debug("第{}层墙生成完成，剩余轮廓多边形数: {}", wall_idx, current_outline.size());
+    }
+
+    // 设置内部轮廓（最后一层偏移的结果）
+    inner_contour_ = current_outline;
+
+    // 标记工具路径已生成
+    toolpaths_generated_ = true;
+
+    spdlog::info("=== 传统简单偏移算法完成 ===");
+    spdlog::info("成功生成{}层墙，内部轮廓多边形数: {}", inset_count_, inner_contour_.size());
+
+    // 统计生成的路径数量
+    size_t total_lines = 0;
+    for (size_t i = 0; i < toolpaths_.size(); i++)
+    {
+        total_lines += toolpaths_[i].size();
+        spdlog::debug("第{}层墙包含{}条路径", i, toolpaths_[i].size());
+    }
+    spdlog::info("总共生成{}条打印路径", total_lines);
 }
 
 void WallToolPaths::removeSmallFillLines(std::vector<VariableWidthLines>& toolpaths)

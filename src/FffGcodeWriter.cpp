@@ -213,6 +213,107 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
 {
     const SliceLayer& layer = mesh.layers[layer_nr];
 
+    // === 螺旋模式自定义Z接缝点：计算当前层净Z坐标 ===
+    // 与普通模式相同，计算不包括raft的模型净高度
+    coord_t layer_z = 0;
+    if (layer_nr >= 0)
+    {
+        const coord_t layer_height = mesh.settings.get<coord_t>("layer_height");           // 普通层厚度
+        const coord_t initial_layer_thickness = mesh.settings.get<coord_t>("layer_height_0"); // 第一层厚度
+
+        if (layer_nr == 0)
+        {
+            layer_z = initial_layer_thickness;  // 第一层
+        }
+        else
+        {
+            layer_z = initial_layer_thickness + (layer_nr - 1) * layer_height;  // 累积高度
+        }
+    }
+
+    // === 螺旋模式自定义Z接缝点处理 ===
+    // 在螺旋模式下，需要平衡自定义接缝点和螺旋连续性
+    // 如果强制跳跃到自定义接缝点，可能会破坏螺旋的平滑性
+    if (mesh.settings.get<bool>("draw_z_seam_enable"))
+    {
+        // 创建ZSeamConfig来计算当前层的自定义接缝位置
+        ZSeamConfig z_seam_config(
+            mesh.settings.get<EZSeamType>("z_seam_type"),                    // 基础接缝类型
+            mesh.getZSeamHint(),                                             // 用户指定位置
+            mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),        // 角点偏好
+            mesh.settings.get<coord_t>("wall_line_width_0") * 2,             // 曲率简化参数
+            mesh.settings.get<bool>("draw_z_seam_enable"),                   // 启用自定义接缝点
+            mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points"),  // 3D接缝点列表
+            mesh.settings.get<bool>("z_seam_point_interpolation"),           // 线段插值选项
+            mesh.settings.get<bool>("draw_z_seam_grow"),                     // 超出范围处理
+            layer_z);                                                        // 当前层净Z坐标
+
+        // 尝试获取当前层的自定义接缝位置
+        auto interpolated_pos = z_seam_config.getInterpolatedSeamPosition();
+        if (interpolated_pos.has_value())
+        {
+            // === 策略1：第一层直接使用自定义接缝点 ===
+            // 第一层没有前一层的约束，可以自由选择接缝位置
+            if (last_layer_nr < 0)
+            {
+                spdlog::info("螺旋模式第一层使用自定义接缝位置: 层号={}, Z={:.2f}mm, 位置=({:.2f}, {:.2f})",
+                            layer_nr, INT2MM(layer_z), INT2MM(interpolated_pos->X), INT2MM(interpolated_pos->Y));
+                // 在螺旋wall上找到最接近自定义位置的顶点
+                return PolygonUtils::findClosest(interpolated_pos.value(), layer.parts[0].spiral_wall[0]).point_idx_;
+            }
+            else
+            {
+                // === 策略2：后续层需要平衡自定义接缝点和螺旋连续性 ===
+
+                // 计算自定义接缝点对应的顶点索引
+                size_t custom_seam_idx = PolygonUtils::findClosest(interpolated_pos.value(), layer.parts[0].spiral_wall[0]).point_idx_;
+
+                // 获取前一层的接缝点位置，用于保持螺旋连续性
+                const Polygon& last_wall = (*storage.spiralize_wall_outlines[last_layer_nr])[0];
+                const Point2LL last_wall_seam_vertex = last_wall[storage.spiralize_seam_vertex_indices[last_layer_nr]];
+
+                // 计算基于连续性的接缝点索引（最接近前一层接缝点的位置）
+                const Polygon& wall = layer.parts[0].spiral_wall[0];
+                size_t continuity_seam_idx = PolygonUtils::findNearestVert(last_wall_seam_vertex, wall);
+
+                // === 角度差异计算：判断两个接缝点之间的"距离" ===
+                // 在圆形轮廓上，顶点索引的差异代表角度差异
+                const size_t n_points = wall.size();
+                int angle_diff = static_cast<int>(custom_seam_idx) - static_cast<int>(continuity_seam_idx);
+
+                // 处理环形索引：选择最短的角度路径
+                if (angle_diff > static_cast<int>(n_points / 2))
+                {
+                    angle_diff -= n_points;  // 从另一个方向走更短
+                }
+                else if (angle_diff < -static_cast<int>(n_points / 2))
+                {
+                    angle_diff += n_points;  // 从另一个方向走更短
+                }
+
+                // === 决策：角度差异小于90度时使用自定义接缝点 ===
+                // n_points/4 约等于90度的顶点数量
+                if (std::abs(angle_diff) < static_cast<int>(n_points / 4))
+                {
+                    spdlog::info("螺旋模式使用自定义接缝位置: 层号={}, Z={:.2f}mm, 位置=({:.2f}, {:.2f}), 角度差异={}",
+                                layer_nr, INT2MM(layer_z), INT2MM(interpolated_pos->X), INT2MM(interpolated_pos->Y), angle_diff);
+                    return custom_seam_idx;
+                }
+                else
+                {
+                    // 角度差异过大，优先保持螺旋连续性，避免打印质量问题
+                    spdlog::info("螺旋模式自定义接缝点角度差异过大({}), 优先保持螺旋连续性: 层号={}, Z={:.2f}mm",
+                                angle_diff, layer_nr, INT2MM(layer_z));
+                    // 继续执行默认的连续性逻辑（不return，让函数继续执行）
+                }
+            }
+        }
+        else
+        {
+            spdlog::debug("螺旋模式自定义接缝插值失败，使用默认处理: 层号={}, Z={:.2f}mm", layer_nr, INT2MM(layer_z));
+        }
+    }
+
     // last_layer_nr will be < 0 until we have processed the first non-empty layer
     if (last_layer_nr < 0)
     {
@@ -1754,7 +1855,11 @@ void FffGcodeWriter::addMeshLayerToGCode_meshSurfaceMode(const SliceMeshStorage&
         mesh.settings.get<EZSeamType>("z_seam_type"),
         mesh.getZSeamHint(),
         mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),
-        mesh.settings.get<coord_t>("wall_line_width_0") * 2);
+        mesh.settings.get<coord_t>("wall_line_width_0") * 2,
+        mesh.settings.get<bool>("draw_z_seam_enable"),
+        mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points"),
+        mesh.settings.get<bool>("z_seam_point_interpolation"),
+        mesh.settings.get<bool>("draw_z_seam_grow"));
     const bool spiralize = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("magic_spiralize");
     constexpr Ratio flow_ratio = 1.0;
     constexpr bool always_retract = false;
@@ -1821,7 +1926,11 @@ void FffGcodeWriter::addMeshLayerToGCode(
             mesh.settings.get<EZSeamType>("z_seam_type"),
             mesh.getZSeamHint(),
             mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),
-            mesh.settings.get<coord_t>("wall_line_width_0") * 2);
+            mesh.settings.get<coord_t>("wall_line_width_0") * 2,
+            mesh.settings.get<bool>("draw_z_seam_enable"),
+            mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points"),
+            mesh.settings.get<bool>("z_seam_point_interpolation"),
+            mesh.settings.get<bool>("draw_z_seam_grow"));
     }
     PathOrderOptimizer<SliceLayerPart*> part_order_optimizer(gcode_layer.getLastPlannedPositionOrStartingPosition(), z_seam_config);
     for (SliceLayerPart& part : layer.parts)
@@ -2746,7 +2855,11 @@ bool FffGcodeWriter::processSingleLayerInfill(
                     mesh.settings.get<EZSeamType>("z_seam_type"),
                     mesh.getZSeamHint(),
                     mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),
-                    mesh_config.infill_config[0].getLineWidth() * 2);
+                    mesh_config.infill_config[0].getLineWidth() * 2,
+                    mesh.settings.get<bool>("draw_z_seam_enable"),
+                    mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points"),
+                    mesh.settings.get<bool>("z_seam_point_interpolation"),
+                    mesh.settings.get<bool>("draw_z_seam_grow"));
                 InsetOrderOptimizer wall_orderer(
                     *this,
                     storage,
@@ -3287,11 +3400,52 @@ bool FffGcodeWriter::processInsets(
     {
         // Main case: Optimize the insets with the InsetOrderOptimizer.
         const coord_t wall_x_wipe_dist = 0;
+
+        // === 自定义Z接缝点功能：计算当前层的净Z坐标 ===
+        // 注意：这里计算的是模型的净高度，不包括raft等附加结构
+        // 这样用户设置的接缝点坐标就是基于模型本身的高度
+        const LayerIndex layer_nr = gcode_layer.getLayerNr();
+        coord_t layer_z = 0;  // 当前层的Z坐标（微米单位）
+
+        if (layer_nr >= 0)
+        {
+            // 正常模型层：计算累积的模型净高度
+            const coord_t layer_height = mesh.settings.get<coord_t>("layer_height");           // 普通层厚度
+            const coord_t initial_layer_thickness = mesh.settings.get<coord_t>("layer_height_0"); // 第一层厚度
+
+            if (layer_nr == 0)
+            {
+                // 第一层：直接使用第一层厚度
+                layer_z = initial_layer_thickness;
+            }
+            else
+            {
+                // 后续层：第一层厚度 + (层号-1) * 普通层厚度
+                layer_z = initial_layer_thickness + (layer_nr - 1) * layer_height;
+            }
+
+            spdlog::debug("外轮廓层Z坐标计算: 层号={}, 净高度={:.2f}mm", layer_nr, INT2MM(layer_z));
+        }
+        else
+        {
+            // Raft层（负层号）：不使用自定义接缝点，保持layer_z=0
+            // 这样ZSeamConfig会回退到默认的接缝处理方式
+            layer_z = 0;
+            spdlog::debug("Raft层(层号={}), 外轮廓不使用自定义接缝点", layer_nr);
+        }
+
+        // === 创建ZSeamConfig，包含自定义Z接缝点配置 ===
+        // 这个配置会被传递给wall路径优化器，用于确定外轮廓的接缝位置
         const ZSeamConfig z_seam_config(
-            mesh.settings.get<EZSeamType>("z_seam_type"),
-            mesh.getZSeamHint(),
-            mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),
-            mesh.settings.get<coord_t>("wall_line_width_0") * 2);
+            mesh.settings.get<EZSeamType>("z_seam_type"),                    // 基础接缝类型（shortest/user_specified等）
+            mesh.getZSeamHint(),                                             // 用户指定的接缝位置提示
+            mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),        // 角点偏好设置
+            mesh.settings.get<coord_t>("wall_line_width_0") * 2,             // 曲率简化参数
+            mesh.settings.get<bool>("draw_z_seam_enable"),                   // 是否启用自定义Z接缝点
+            mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points"),  // 3D接缝点列表
+            mesh.settings.get<bool>("z_seam_point_interpolation"),           // 是否在线段上插值
+            mesh.settings.get<bool>("draw_z_seam_grow"),                     // 超出范围时的处理方式
+            layer_z);                                                        // 当前层的净Z坐标
         const Shape disallowed_areas_for_seams;
         constexpr bool scarf_seam = true;
         constexpr bool smooth_speed = true;

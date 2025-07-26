@@ -447,6 +447,10 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
         processInfillMesh(storage, mesh_order_idx, mesh_order);
     }
 
+    // === 新增功能：基于周长和面积的截面筛选 ===
+    // 在处理walls、skin、infill之前，先筛选掉不符合条件的截面
+    filterSmallLayerParts(mesh);
+
     // TODO: make progress more accurate!!
     // note: estimated time for     insets : skins = 22.953 : 48.858
     std::vector<double> walls_vs_skin_timing({ 22.953, 48.858 });
@@ -1184,6 +1188,187 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
             }
             part.wall_toolpaths = result_paths;
         }
+    }
+}
+
+void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
+{
+    // === 获取筛选参数 ===
+    // minimum_polygon_circumference: 最小周长阈值（微米）
+    // minimum_polygon_area: 最小面积阈值（平方微米）
+
+    // 安全获取minimum_polygon_circumference参数
+    coord_t min_circumference = 0;
+    try {
+        min_circumference = mesh.settings.get<coord_t>("minimum_polygon_circumference");
+    } catch (...) {
+        // 参数未设置，使用默认值0
+        min_circumference = 0;
+    }
+
+    // 安全获取minimum_polygon_area参数，如果不存在则使用默认值0（不进行面积筛选）
+    coord_t min_area_um2 = 0;  // 默认值：不进行面积筛选
+    try {
+        // 从设置中获取面积阈值（单位：平方毫米），转换为平方微米
+        double min_area_mm2 = mesh.settings.get<double>("minimum_polygon_area");
+        min_area_um2 = static_cast<coord_t>(min_area_mm2 * 1000000.0);  // mm² -> μm²
+    } catch (...) {
+        // 参数未设置，使用默认值0
+        min_area_um2 = 0;
+    }
+
+    // 如果两个阈值都为0或负数，则不进行筛选
+    if (min_circumference <= 0 && min_area_um2 <= 0)
+    {
+        spdlog::debug("跳过小图形筛选: 周长阈值={:.3f}mm, 面积阈值={:.3f}mm²",
+                     INT2MM(min_circumference), min_area_um2 / 1000000.0);
+        return;
+    }
+
+    spdlog::info("=== 小图形筛选功能开始 ===");
+    spdlog::info("分析标准: 只分析最外层wall（inset0）的周长和面积");
+    spdlog::info("删除策略: 删除整个截面的所有内容（inset、infill、skin等）");
+    spdlog::info("最小周长阈值: {:.3f}mm", INT2MM(min_circumference));
+    spdlog::info("最小面积阈值: {:.3f}mm²", min_area_um2 / 1000000.0);
+
+    size_t total_removed_parts = 0;
+    size_t total_original_parts = 0;
+
+    // === 遍历所有层进行筛选 ===
+    for (LayerIndex layer_idx = 0; layer_idx < LayerIndex(mesh.layers.size()); layer_idx++)
+    {
+        SliceLayer& layer = mesh.layers[layer_idx];
+        size_t original_parts_count = layer.parts.size();
+        total_original_parts += original_parts_count;
+
+        if (original_parts_count == 0)
+        {
+            continue;  // 空层，跳过
+        }
+
+        // 如果该层有多个图形，输出详细分析信息
+        if (original_parts_count > 1)
+        {
+            spdlog::info("=== 层{} 多图形分析开始 ===", layer_idx);
+            spdlog::info("该层包含{}个图形，开始逐个分析最外层wall", original_parts_count);
+        }
+
+        // 记录每个part的分析结果，用于详细日志
+        std::vector<bool> part_removal_decisions;
+        std::vector<std::string> part_analysis_details;
+
+        // 使用remove_if算法筛选掉不符合条件的parts
+        auto removed_parts_begin = std::remove_if(
+            layer.parts.begin(),
+            layer.parts.end(),
+            [&](const SliceLayerPart& part) -> bool
+            {
+                // 获取当前part在原始列表中的索引（用于日志）
+                size_t part_index = &part - &layer.parts[0];
+
+                // === 分析最外层wall（inset0）的周长和面积 ===
+                // 注意：这里分析的是part.outline，它代表最外层轮廓
+                coord_t total_circumference = 0;
+                coord_t total_area = 0;
+
+                spdlog::info("  图形[{}]: 开始分析最外层wall", part_index);
+                spdlog::info("  图形[{}]: outline包含{}个多边形", part_index, part.outline.size());
+
+                // 遍历part的所有outline多边形（最外层wall）
+                for (size_t poly_idx = 0; poly_idx < part.outline.size(); ++poly_idx)
+                {
+                    const Polygon& polygon = part.outline[poly_idx];
+
+                    // 计算周长
+                    coord_t polygon_circumference = polygon.length();
+                    total_circumference += polygon_circumference;
+
+                    // 计算面积（使用绝对值处理正负面积）
+                    coord_t polygon_area = std::abs(static_cast<coord_t>(polygon.area()));
+                    total_area += polygon_area;
+
+                    spdlog::info("    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}",
+                                poly_idx, INT2MM(polygon_circumference), INT2MM2(polygon_area), polygon.size());
+                }
+
+                spdlog::info("  图形[{}]: 总周长={:.3f}mm, 总面积={:.3f}mm²",
+                            part_index, INT2MM(total_circumference), INT2MM2(total_area));
+
+                // === 判断是否需要删除 ===
+                bool should_remove = false;
+                std::string removal_reason = "";
+
+                // 检查周长条件
+                if (min_circumference > 0 && total_circumference < min_circumference)
+                {
+                    should_remove = true;
+                    removal_reason += "周长不足(" + std::to_string(INT2MM(total_circumference)) + "mm < " +
+                                     std::to_string(INT2MM(min_circumference)) + "mm)";
+                }
+
+                // 检查面积条件
+                if (min_area_um2 > 0 && total_area < min_area_um2)
+                {
+                    if (should_remove) {
+                        removal_reason += " 且 ";
+                    }
+                    should_remove = true;
+                    removal_reason += "面积不足(" + std::to_string(INT2MM2(total_area)) + "mm² < " +
+                                     std::to_string(min_area_um2 / 1000000.0) + "mm²)";
+                }
+
+                // 输出决策结果
+                if (should_remove)
+                {
+                    spdlog::info("  图形[{}]: ❌ 删除决策 - {}", part_index, removal_reason);
+                    spdlog::info("  图形[{}]: 将删除整个截面（包括inset、infill、skin等所有内容）", part_index);
+                }
+                else
+                {
+                    spdlog::info("  图形[{}]: ✅ 保留决策 - 满足所有阈值要求", part_index);
+                }
+
+                return should_remove;
+            }
+        );
+
+        // 实际删除不符合条件的parts
+        size_t removed_count = std::distance(removed_parts_begin, layer.parts.end());
+        layer.parts.erase(removed_parts_begin, layer.parts.end());
+
+        total_removed_parts += removed_count;
+
+        // 输出层级筛选结果
+        if (original_parts_count > 1 || removed_count > 0)
+        {
+            spdlog::info("=== 层{} 筛选结果 ===", layer_idx);
+            spdlog::info("原始图形数: {}, 删除图形数: {}, 保留图形数: {}",
+                        original_parts_count, removed_count, layer.parts.size());
+
+            if (removed_count > 0)
+            {
+                double removal_rate = (double)removed_count / original_parts_count * 100.0;
+                spdlog::info("该层删除率: {:.1f}%", removal_rate);
+            }
+        }
+    }
+
+    // === 输出总体筛选结果 ===
+    spdlog::info("=== 小图形筛选功能完成 ===");
+    spdlog::info("处理层数: {}", mesh.layers.size());
+    spdlog::info("原始图形总数: {}", total_original_parts);
+    spdlog::info("删除图形总数: {}", total_removed_parts);
+    spdlog::info("保留图形总数: {}", total_original_parts - total_removed_parts);
+
+    if (total_removed_parts > 0)
+    {
+        double removal_percentage = (double)total_removed_parts / total_original_parts * 100.0;
+        spdlog::info("总体删除率: {:.1f}%", removal_percentage);
+        spdlog::info("删除策略: 基于最外层wall分析，删除整个截面内容");
+    }
+    else
+    {
+        spdlog::info("结果: 没有图形被删除，所有图形都满足阈值要求");
     }
 }
 

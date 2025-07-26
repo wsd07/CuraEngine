@@ -24,6 +24,9 @@
 #include "utils/linearAlg2D.h" //To find the angle of corners to hide seams.
 #include "utils/math.h"
 #include "utils/polygonUtils.h"
+#include <limits>
+#include <optional>
+#include <spdlog/spdlog.h>
 #include "utils/scoring/BestElementFinder.h"
 #include "utils/scoring/CornerScoringCriterion.h"
 #include "utils/scoring/DistanceScoringCriterion.h"
@@ -240,7 +243,7 @@ public:
                     {
                         continue; // Can't pre-compute the seam for open polylines since they're at the endpoint nearest to the current position.
                     }
-                    path.start_vertex_ = findStartLocation(path, path.seam_config_.pos_);
+                    path.start_vertex_ = findStartLocationWithZ(path, path.seam_config_.pos_, 0);
                 }
             }
         }
@@ -335,6 +338,8 @@ protected:
      * Contains the overhang areas, where we would prefer not to place the start locations of walls
      */
     const Shape overhang_areas_;
+
+
 
     std::vector<OrderablePath> getOptimizedOrder(SparsePointGridInclusive<size_t> line_bucket_grid, size_t snap_radius)
     {
@@ -625,7 +630,7 @@ protected:
                                        || path->seam_config_.type_ == EZSeamType::SHARPEST_CORNER;
             if (! path->is_closed_ || ! precompute_start) // Find the start location unless we've already precomputed it.
             {
-                path->start_vertex_ = findStartLocation(*path, start_position);
+                path->start_vertex_ = findStartLocationWithZ(*path, start_position, 0);
                 if (! path->is_closed_) // Open polylines start at vertex 0 or vertex N-1. Indicate that they should be reversed if they start at N-1.
                 {
                     path->backwards_ = path->start_vertex_ > 0;
@@ -712,6 +717,18 @@ protected:
      */
     size_t findStartLocation(const OrderablePath& path, const Point2LL& target_pos)
     {
+        return findStartLocationWithZ(path, target_pos, 0);
+    }
+
+    /*!
+     * 支持Z坐标的接缝点查找函数
+     * \param path 路径信息
+     * \param target_pos 目标2D位置
+     * \param layer_z 当前层的Z坐标
+     * \return 起始顶点索引
+     */
+    size_t findStartLocationWithZ(const OrderablePath& path, const Point2LL& target_pos, coord_t layer_z)
+    {
         if (! path.is_closed_)
         {
             // For polylines, the seam settings are not applicable. Simply choose the position closest to target_pos then.
@@ -738,7 +755,37 @@ protected:
 
         BestElementFinder::WeighedCriterion main_criterion;
 
-        if (path.force_start_index_.has_value()) // Handles EZSeamType::USER_SPECIFIED with "seam_on_vertex" disabled
+        // === 外轮廓自定义Z接缝点处理 ===
+        // 检查当前路径是否启用了自定义Z接缝点功能
+        // 这个功能只对外轮廓wall生效，因为Z接缝是外轮廓起始点形成的痕迹
+        if (path.seam_config_.draw_z_seam_enable_)
+        {
+            spdlog::info("=== 外轮廓自定义Z接缝点处理开始 ===");
+
+            // 尝试获取当前层的插值接缝位置
+            // ZSeamConfig内部会根据当前层Z坐标和用户设置的3D点进行插值计算
+            auto interpolated_pos = path.seam_config_.getInterpolatedSeamPosition();
+            if (interpolated_pos.has_value())
+            {
+                // 成功获取自定义接缝位置，使用它作为目标点
+                Point2LL custom_target_pos = interpolated_pos.value();
+
+                // 当前实现：在现有顶点中查找最接近自定义位置的点
+                // TODO: 未来可以实现在多边形线段上插值，找到精确位置
+                spdlog::info("使用自定义接缝位置: ({:.2f}, {:.2f})",
+                           INT2MM(custom_target_pos.X), INT2MM(custom_target_pos.Y));
+
+                // 创建距离评分标准，优先选择最接近自定义位置的顶点
+                main_criterion.criterion = std::make_shared<DistanceScoringCriterion>(points, custom_target_pos);
+            }
+            else
+            {
+                // 插值失败（可能超出范围且grow=true），回退到默认处理方式
+                spdlog::info("插值失败，使用默认处理方式");
+                main_criterion.criterion = std::make_shared<DistanceScoringCriterion>(points, target_pos);
+            }
+        }
+        else if (path.force_start_index_.has_value()) // Handles EZSeamType::USER_SPECIFIED with "seam_on_vertex" disabled
         {
             // Use a much smaller distance divider because we want points around the forced points to be filtered out very easily
             constexpr double distance_divider = 1.0;
@@ -766,16 +813,9 @@ protected:
         }
         else
         {
-            spdlog::warn("Missing main criterion calculator");
-        }
-
-        // Second criterion with heigher weight to avoid overhanging areas
-        if (! overhang_areas_.empty())
-        {
-            BestElementFinder::WeighedCriterion overhang_criterion;
-            overhang_criterion.weight = 2.0;
-            overhang_criterion.criterion = std::make_shared<ExclusionAreaScoringCriterion>(points, overhang_areas_);
-            main_criteria_pass.criteria.push_back(overhang_criterion);
+            // Fallback to closest point
+            main_criterion.criterion = std::make_shared<DistanceScoringCriterion>(points, target_pos);
+            main_criteria_pass.criteria.push_back(main_criterion);
         }
 
         best_candidate_finder.appendCriteriaPass(main_criteria_pass);
@@ -808,11 +848,7 @@ protected:
     }
 
     /*!
-     * Calculate the direct Euclidean distance to move from one point to
-     * another.
-     * \param a One point, to compute distance to \ref b.
-     * \param b Another point, to compute distance to \ref a.
-     * \return The distance between the two points.
+     * 计算两点间的直线距离
      */
     coord_t getDirectDistance(const Point2LL& a, const Point2LL& b) const
     {
@@ -820,14 +856,7 @@ protected:
     }
 
     /*!
-     * Calculate the distance that one would have to travel to move from A to B
-     * while avoiding collisions with the combing boundary.
-     *
-     * This method assumes that there is a combing boundary. So
-     * \ref combing_boundary should not be ``nullptr``.
-     * \param a One point, to compute distance to \ref b.
-     * \param b Another point, to compute distance to \ref a.
-     * \return The combing distance between the two points.
+     * 计算避开障碍物的路径距离
      */
     coord_t getCombingDistance(const Point2LL& a, const Point2LL& b)
     {
@@ -865,6 +894,10 @@ protected:
         return sum * sum; // Squared distance, for fair comparison with direct distance.
     }
 
+
+
+
+
     bool isLoopingPolyline(const OrderablePath& path)
     {
         if (path.converted_->empty())
@@ -872,6 +905,68 @@ protected:
             return false;
         }
         return vSize2(path.converted_->back() - path.converted_->front()) < _coincident_point_distance * _coincident_point_distance;
+    }
+
+    size_t findAndInsertClosestPointOnPolygon(const OrderablePath& path, const Point2LL& target_pos)
+    {
+        if (!path.is_closed_ || path.converted_->empty())
+        {
+            // 对于开放路径或空路径，回退到标准处理
+            return 0;
+        }
+
+        const PointsSet& points = *path.converted_;
+        coord_t closest_distance_sqd = std::numeric_limits<coord_t>::max();
+        size_t best_segment_idx = 0;
+        Point2LL closest_point_on_segment;
+
+        // 遍历所有线段，找到最接近目标点的线段和点
+        for (size_t i = 0; i < points.size(); ++i)
+        {
+            const Point2LL& p1 = points[i];
+            const Point2LL& p2 = points[(i + 1) % points.size()];
+
+            // 计算目标点到线段的最近点
+            Point2LL closest_on_line = LinearAlg2D::getClosestOnLineSegment(target_pos, p1, p2);
+            coord_t distance_sqd = vSize2(target_pos - closest_on_line);
+
+            if (distance_sqd < closest_distance_sqd)
+            {
+                closest_distance_sqd = distance_sqd;
+                best_segment_idx = i;
+                closest_point_on_segment = closest_on_line;
+            }
+        }
+
+        // 检查最近点是否就是现有的顶点
+        const Point2LL& p1 = points[best_segment_idx];
+        const Point2LL& p2 = points[(best_segment_idx + 1) % points.size()];
+
+        const coord_t tolerance = 10; // 10微米的容差
+        if (vSize2(closest_point_on_segment - p1) < tolerance * tolerance)
+        {
+            return best_segment_idx;
+        }
+        if (vSize2(closest_point_on_segment - p2) < tolerance * tolerance)
+        {
+            return (best_segment_idx + 1) % points.size();
+        }
+
+        // 需要在线段上插入新点
+        // 注意：这里我们需要修改路径，但OrderablePath可能是const的
+        // 为了简化实现，我们先返回线段起点的索引
+        // 在实际应用中，可能需要更复杂的处理来真正插入新点
+
+        // TODO: 实现真正的点插入逻辑
+        // 目前返回最近的现有顶点
+        if (vSize2(target_pos - p1) < vSize2(target_pos - p2))
+        {
+            return best_segment_idx;
+        }
+        else
+        {
+            return (best_segment_idx + 1) % points.size();
+        }
     }
 };
 

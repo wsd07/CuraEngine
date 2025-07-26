@@ -121,6 +121,13 @@ protected:
      */
     static void simplifyToolPaths(std::vector<VariableWidthLines>& toolpaths, const Settings& settings);
 
+    /*!
+     * Generate simple walls using traditional offset algorithm (bypassing BeadingStrategy).
+     * This method creates walls using simple inward offsets with fixed line widths.
+     * \param outline The outline to generate walls for.
+     */
+    void generateSimpleWalls(const Shape& outline);
+
 private:
     const Shape& outline_; //<! A reference to the outline polygon that is the designated area
     coord_t bead_width_0_; //<! The nominal or first extrusion line width with which libArachne generates its walls

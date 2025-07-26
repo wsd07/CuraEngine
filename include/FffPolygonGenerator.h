@@ -135,6 +135,14 @@ private:
     void processWalls(SliceMeshStorage& mesh, size_t layer_nr);
 
     /*!
+     * Filter out small layer parts based on circumference and area thresholds.
+     * This function removes entire SliceLayerParts that don't meet the minimum
+     * circumference or area requirements, ensuring complete removal of small features.
+     * \param mesh Input and Output parameter: the mesh whose layers will be filtered
+     */
+    void filterSmallLayerParts(SliceMeshStorage& mesh);
+
+    /*!
      * Generate the outline of the ooze shield.
      * \param storage Input and Output parameter: fetches the outline information (see SliceLayerPart::outline) and generates the other reachable field of the \p storage
      */
