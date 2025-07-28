@@ -770,8 +770,8 @@ protected:
                 // 成功获取自定义接缝位置，使用它作为目标点
                 Point2LL custom_target_pos = interpolated_pos.value();
 
-                // 当前实现：在现有顶点中查找最接近自定义位置的点
-                // TODO: 未来可以实现在多边形线段上插值，找到精确位置
+                // 新策略：直接在现有顶点中查找最接近自定义位置的点
+                // 如果启用了插值功能，插值点应该已经在多边形初始化时被插入
                 spdlog::info("使用自定义接缝位置: ({:.2f}, {:.2f})",
                            INT2MM(custom_target_pos.X), INT2MM(custom_target_pos.Y));
 

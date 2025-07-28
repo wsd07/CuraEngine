@@ -8,7 +8,6 @@
 #include "geometry/Point2LL.h" //To store the preferred seam position.
 #include "geometry/Point3LL.h" //To store 3D seam points.
 #include <vector>
-#include <optional> // For std::optional - Windows MSVC compatibility
 
 namespace cura
 {

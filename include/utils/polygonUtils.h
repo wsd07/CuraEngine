@@ -366,8 +366,9 @@ public:
      * \note The penalty term is applied to the *squared* distance score
      *
      * \param penalty_function A function returning a penalty term on the squared distance score of a candidate point.
+     * \param interpolate
      */
-    static ClosestPointPolygon findClosest(Point2LL from, const Polygon& polygon, const std::function<int(Point2LL)>& penalty_function = no_penalty_function);
+    static ClosestPointPolygon findClosest(Point2LL from, const Polygon& polygon, const std::function<int(Point2LL)>& penalty_function = no_penalty_function , bool interpolate = false);
 
     /*!
      * Find the nearest vertex to \p from in \p polys

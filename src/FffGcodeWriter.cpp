@@ -232,85 +232,92 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
     }
 
     // === 螺旋模式自定义Z接缝点处理 ===
-    // 在螺旋模式下，需要平衡自定义接缝点和螺旋连续性
-    // 如果强制跳跃到自定义接缝点，可能会破坏螺旋的平滑性
+    // 按照用户要求：如果draw_z_seam_enable=true且有有效点，就按照draw_z_seam_points查找接缝点
     if (mesh.settings.get<bool>("draw_z_seam_enable"))
     {
-        // 创建ZSeamConfig来计算当前层的自定义接缝位置
-        ZSeamConfig z_seam_config(
-            mesh.settings.get<EZSeamType>("z_seam_type"),                    // 基础接缝类型
-            mesh.getZSeamHint(),                                             // 用户指定位置
-            mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),        // 角点偏好
-            mesh.settings.get<coord_t>("wall_line_width_0") * 2,             // 曲率简化参数
-            mesh.settings.get<bool>("draw_z_seam_enable"),                   // 启用自定义接缝点
-            mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points"),  // 3D接缝点列表
-            mesh.settings.get<bool>("z_seam_point_interpolation"),           // 线段插值选项
-            mesh.settings.get<bool>("draw_z_seam_grow"),                     // 超出范围处理
-            layer_z);                                                        // 当前层净Z坐标
-
-        // 尝试获取当前层的自定义接缝位置
-        auto interpolated_pos = z_seam_config.getInterpolatedSeamPosition();
-        if (interpolated_pos.has_value())
+        auto z_seam_points = mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points");
+        if (!z_seam_points.empty())
         {
-            // === 策略1：第一层直接使用自定义接缝点 ===
-            // 第一层没有前一层的约束，可以自由选择接缝位置
-            if (last_layer_nr < 0)
+            spdlog::info("=== 螺旋模式自定义Z接缝点处理 ===");
+            spdlog::info("层号={}, Z={:.2f}mm", layer_nr, INT2MM(layer_z));
+
+            // 按Z坐标排序
+            std::vector<Point3LL> sorted_points = z_seam_points;
+            std::sort(sorted_points.begin(), sorted_points.end(),
+                      [](const Point3LL& a, const Point3LL& b) { return a.z_ < b.z_; });
+
+            const coord_t min_z = sorted_points.front().z_;
+            const coord_t max_z = sorted_points.back().z_;
+
+            spdlog::info("Z接缝点范围: {:.2f}mm - {:.2f}mm", INT2MM(min_z), INT2MM(max_z));
+
+            Point2LL target_seam_pos;
+            bool use_custom_seam = false;
+
+            if (layer_z < min_z)
             {
-                spdlog::info("螺旋模式第一层使用自定义接缝位置: 层号={}, Z={:.2f}mm, 位置=({:.2f}, {:.2f})",
-                            layer_nr, INT2MM(layer_z), INT2MM(interpolated_pos->X), INT2MM(interpolated_pos->Y));
-                // 在螺旋wall上找到最接近自定义位置的顶点
-                return PolygonUtils::findClosest(interpolated_pos.value(), layer.parts[0].spiral_wall[0]).point_idx_;
+                // 低于最低点：使用最低点的XY坐标
+                target_seam_pos = Point2LL(sorted_points.front().x_, sorted_points.front().y_);
+                use_custom_seam = true;
+                spdlog::info("层Z低于最低点，使用最低点: ({:.2f}, {:.2f})",
+                           INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
             }
-            else
+            else if (layer_z > max_z)
             {
-                // === 策略2：后续层需要平衡自定义接缝点和螺旋连续性 ===
-
-                // 计算自定义接缝点对应的顶点索引
-                size_t custom_seam_idx = PolygonUtils::findClosest(interpolated_pos.value(), layer.parts[0].spiral_wall[0]).point_idx_;
-
-                // 获取前一层的接缝点位置，用于保持螺旋连续性
-                const Polygon& last_wall = (*storage.spiralize_wall_outlines[last_layer_nr])[0];
-                const Point2LL last_wall_seam_vertex = last_wall[storage.spiralize_seam_vertex_indices[last_layer_nr]];
-
-                // 计算基于连续性的接缝点索引（最接近前一层接缝点的位置）
-                const Polygon& wall = layer.parts[0].spiral_wall[0];
-                size_t continuity_seam_idx = PolygonUtils::findNearestVert(last_wall_seam_vertex, wall);
-
-                // === 角度差异计算：判断两个接缝点之间的"距离" ===
-                // 在圆形轮廓上，顶点索引的差异代表角度差异
-                const size_t n_points = wall.size();
-                int angle_diff = static_cast<int>(custom_seam_idx) - static_cast<int>(continuity_seam_idx);
-
-                // 处理环形索引：选择最短的角度路径
-                if (angle_diff > static_cast<int>(n_points / 2))
+                // 高于最高点：根据draw_z_seam_grow决定
+                bool draw_z_seam_grow = mesh.settings.get<bool>("draw_z_seam_grow");
+                if (draw_z_seam_grow)
                 {
-                    angle_diff -= n_points;  // 从另一个方向走更短
-                }
-                else if (angle_diff < -static_cast<int>(n_points / 2))
-                {
-                    angle_diff += n_points;  // 从另一个方向走更短
-                }
-
-                // === 决策：角度差异小于90度时使用自定义接缝点 ===
-                // n_points/4 约等于90度的顶点数量
-                if (std::abs(angle_diff) < static_cast<int>(n_points / 4))
-                {
-                    spdlog::info("螺旋模式使用自定义接缝位置: 层号={}, Z={:.2f}mm, 位置=({:.2f}, {:.2f}), 角度差异={}",
-                                layer_nr, INT2MM(layer_z), INT2MM(interpolated_pos->X), INT2MM(interpolated_pos->Y), angle_diff);
-                    return custom_seam_idx;
+                    // grow=true：使用最高点的XY坐标
+                    target_seam_pos = Point2LL(sorted_points.back().x_, sorted_points.back().y_);
+                    use_custom_seam = true;
+                    spdlog::info("层Z高于最高点，grow=true，使用最高点: ({:.2f}, {:.2f})",
+                               INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
                 }
                 else
                 {
-                    // 角度差异过大，优先保持螺旋连续性，避免打印质量问题
-                    spdlog::info("螺旋模式自定义接缝点角度差异过大({}), 优先保持螺旋连续性: 层号={}, Z={:.2f}mm",
-                                angle_diff, layer_nr, INT2MM(layer_z));
-                    // 继续执行默认的连续性逻辑（不return，让函数继续执行）
+                    // grow=false：使用常规螺旋连续性逻辑
+                    use_custom_seam = false;
+                    spdlog::info("层Z高于最高点，grow=false，使用常规螺旋逻辑");
                 }
             }
-        }
-        else
-        {
-            spdlog::debug("螺旋模式自定义接缝插值失败，使用默认处理: 层号={}, Z={:.2f}mm", layer_nr, INT2MM(layer_z));
+            else
+            {
+                // 在范围内：进行插值计算
+                // 创建ZSeamConfig进行插值
+                ZSeamConfig z_seam_config(
+                    mesh.settings.get<EZSeamType>("z_seam_type"),
+                    mesh.getZSeamHint(),
+                    mesh.settings.get<EZSeamCornerPrefType>("z_seam_corner"),
+                    mesh.settings.get<coord_t>("wall_line_width_0") * 2,
+                    true,  // draw_z_seam_enable
+                    z_seam_points,
+                    mesh.settings.get<bool>("z_seam_point_interpolation"),
+                    mesh.settings.get<bool>("draw_z_seam_grow"),
+                    layer_z);
+
+                auto interpolated_pos = z_seam_config.getInterpolatedSeamPosition();
+                if (interpolated_pos.has_value())
+                {
+                    target_seam_pos = interpolated_pos.value();
+                    use_custom_seam = true;
+                    spdlog::info("层Z在范围内，插值成功: ({:.2f}, {:.2f})",
+                               INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
+                }
+                else
+                {
+                    use_custom_seam = false;
+                    spdlog::info("层Z在范围内，但插值失败，使用常规逻辑");
+                }
+            }
+
+            if (use_custom_seam)
+            {
+                // 在螺旋wall上找到最接近目标位置的顶点
+                size_t custom_seam_idx = PolygonUtils::findClosest(target_seam_pos, layer.parts[0].spiral_wall[0] ,PolygonUtils::no_penalty_function, mesh.settings.get<bool>("z_seam_point_interpolation")).point_idx_;
+                spdlog::info("螺旋模式使用自定义接缝点，顶点索引: {}", custom_seam_idx);
+                return custom_seam_idx;
+            }
         }
     }
 

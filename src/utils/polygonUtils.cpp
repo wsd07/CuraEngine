@@ -783,7 +783,7 @@ ClosestPointPolygon PolygonUtils::findClosest(Point2LL from, const Shape& polygo
     return best;
 }
 
-ClosestPointPolygon PolygonUtils::findClosest(Point2LL from, const Polygon& polygon, const std::function<int(Point2LL)>& penalty_function)
+ClosestPointPolygon PolygonUtils::findClosest(Point2LL from, const Polygon& polygon, const std::function<int(Point2LL)>& penalty_function , bool interpolate)
 {
     if (polygon.size() == 0)
     {
@@ -792,7 +792,7 @@ ClosestPointPolygon PolygonUtils::findClosest(Point2LL from, const Polygon& poly
     Point2LL aPoint = polygon[0];
     Point2LL best = aPoint;
 
-    int64_t closestDist2_score = vSize2(from - best) + penalty_function(best);
+    int64_t closestDist2_score = vSize2(from - best) ;//+ penalty_function(best);
     int bestPos = 0;
 
     for (unsigned int p = 0; p < polygon.size(); p++)
@@ -804,8 +804,8 @@ ClosestPointPolygon PolygonUtils::findClosest(Point2LL from, const Polygon& poly
             p2_idx = 0;
         const Point2LL& p2 = polygon[p2_idx];
 
-        Point2LL closest_here = LinearAlg2D::getClosestOnLineSegment(from, p1, p2);
-        int64_t dist2_score = vSize2(from - closest_here) + penalty_function(closest_here);
+        Point2LL closest_here = interpolate ? p1 : LinearAlg2D::getClosestOnLineSegment(from, p1, p2);
+        int64_t dist2_score = vSize2(from - closest_here) ;//+ penalty_function(closest_here);
         if (dist2_score < closestDist2_score)
         {
             best = closest_here;

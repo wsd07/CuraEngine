@@ -128,6 +128,15 @@ protected:
      */
     void generateSimpleWalls(const Shape& outline);
 
+    /*!
+     * Insert interpolated Z seam points into polygon if conditions are met
+     * \param polygon The polygon to potentially modify
+     * \param settings The settings containing Z seam configuration
+     * \param layer_z The current layer Z coordinate
+     * \return Modified polygon with interpolated points inserted (if applicable)
+     */
+    static Polygon insertZSeamInterpolationPoints(const Polygon& polygon, const Settings& settings, coord_t layer_z);
+
 private:
     const Shape& outline_; //<! A reference to the outline polygon that is the designated area
     coord_t bead_width_0_; //<! The nominal or first extrusion line width with which libArachne generates its walls

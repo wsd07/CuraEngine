@@ -17,8 +17,10 @@
 #include "Slice.h"
 #include "WallToolPaths.h"
 #include "settings/types/Ratio.h"
+#include "settings/ZSeamConfig.h"
 #include "sliceDataStorage.h"
 #include "utils/Simplify.h" // We're simplifying the spiralized insets.
+#include "utils/linearAlg2D.h"
 #include <spdlog/spdlog.h>
 #include "utils/math.h" // For INT2MM2
 
@@ -187,6 +189,25 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         // 这将简化后续的螺旋路径生成，避免复杂的内部结构
     }
 
+    // === 螺旋模式Z接缝点插值预处理 ===
+    // 当启用插值功能时，在多边形初始化阶段插入插值点
+    if (settings_.get<bool>("draw_z_seam_enable") &&
+        settings_.get<bool>("z_seam_point_interpolation") &&
+        !settings_.get<std::vector<Point3LL>>("draw_z_seam_points").empty())
+    {
+        spdlog::info("=== 螺旋模式Z接缝点插值预处理开始 ===");
+        coord_t layer_z = layer_nr_ * settings_.get<coord_t>("layer_height");
+
+        Shape processed_spiral_outline;
+        for (const Polygon& polygon : spiral_outline)
+        {
+            Polygon processed_polygon = insertZSeamInterpolationPointsForSpiral(polygon, layer_z);
+            processed_spiral_outline.push_back(processed_polygon);
+        }
+        spiral_outline = processed_spiral_outline;
+        spdlog::info("螺旋模式Z接缝点插值预处理完成");
+    }
+
     // 使用处理后的轮廓生成螺旋wall
     part->spiral_wall = spiral_outline.offset(-line_width_0 / 2 - wall_0_inset);
 
@@ -195,6 +216,25 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
     part->spiral_wall = Simplify(train_wall.settings_).polygon(part->spiral_wall);
     part->spiral_wall.removeDegenerateVerts();
 
+    // === 螺旋模式Z接缝点插值后处理 ===
+    // offset和simplify操作可能会丢失插值点，需要在最终的spiral_wall上重新插入
+    if (settings_.get<bool>("draw_z_seam_enable") &&
+        settings_.get<bool>("z_seam_point_interpolation") &&
+        !settings_.get<std::vector<Point3LL>>("draw_z_seam_points").empty())
+    {
+        spdlog::info("=== 螺旋模式Z接缝点插值后处理开始 ===");
+        coord_t layer_z = layer_nr_ * settings_.get<coord_t>("layer_height");
+
+        Shape processed_spiral_wall;
+        for (const Polygon& polygon : part->spiral_wall)
+        {
+            Polygon processed_polygon = insertZSeamInterpolationPointsForSpiral(polygon, layer_z);
+            processed_spiral_wall.push_back(processed_polygon);
+        }
+        part->spiral_wall = processed_spiral_wall;
+        spdlog::info("螺旋模式Z接缝点插值后处理完成");
+    }
+
     if (recompute_outline_based_on_outer_wall)
     {
         part->print_outline = part->spiral_wall.offset(line_width_0 / 2, ClipperLib::jtSquare);
@@ -202,6 +242,99 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
     else
     {
         part->print_outline = part->outline;
+    }
+}
+
+Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon& polygon, coord_t layer_z)
+{
+    // 获取Z接缝点列表
+    auto z_seam_points = settings_.get<std::vector<Point3LL>>("draw_z_seam_points");
+
+    spdlog::info("螺旋模式插值处理: 层Z={:.2f}mm, 多边形顶点数={}", INT2MM(layer_z), polygon.size());
+
+    // 创建ZSeamConfig进行插值计算
+    ZSeamConfig temp_config;
+    temp_config.draw_z_seam_enable_ = true;
+    temp_config.draw_z_seam_points_ = z_seam_points;
+    temp_config.z_seam_point_interpolation_ = true;
+    temp_config.draw_z_seam_grow_ = settings_.get<bool>("draw_z_seam_grow");
+    temp_config.current_layer_z_ = layer_z;
+
+    // 尝试获取插值位置
+    auto interpolated_pos = temp_config.getInterpolatedSeamPosition();
+    if (!interpolated_pos.has_value())
+    {
+        spdlog::info("螺旋模式插值计算失败，返回原多边形");
+        return polygon;
+    }
+
+    Point2LL target_point = interpolated_pos.value();
+    spdlog::info("螺旋模式插值目标点: ({:.2f}, {:.2f})", INT2MM(target_point.X), INT2MM(target_point.Y));
+
+    // 在多边形中查找最近的线段并插入插值点
+    const PointsSet& points = polygon;
+    if (points.size() < 3)
+    {
+        spdlog::info("螺旋模式多边形顶点数不足，返回原多边形");
+        return polygon;
+    }
+
+    coord_t min_distance_sq = std::numeric_limits<coord_t>::max();
+    size_t best_segment_idx = 0;
+    Point2LL closest_point_on_segment;
+    bool need_insert_point = false;
+
+    // 遍历所有线段，找到最近的线段
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        size_t next_i = (i + 1) % points.size();
+        Point2LL segment_start = points[i];
+        Point2LL segment_end = points[next_i];
+
+        // 计算目标点到线段的最近点
+        Point2LL closest_point = LinearAlg2D::getClosestOnLineSegment(target_point, segment_start, segment_end);
+        coord_t distance_sq = vSize2(target_point - closest_point);
+
+        if (distance_sq < min_distance_sq)
+        {
+            min_distance_sq = distance_sq;
+            best_segment_idx = i;
+            closest_point_on_segment = closest_point;
+
+            // 检查最近点是否是线段端点
+            coord_t dist_to_start = vSize2(closest_point - segment_start);
+            coord_t dist_to_end = vSize2(closest_point - segment_end);
+            const coord_t epsilon_sq = 100; // 0.01mm的平方
+
+            need_insert_point = (dist_to_start > epsilon_sq && dist_to_end > epsilon_sq);
+        }
+    }
+
+    spdlog::info("螺旋模式最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
+
+    if (need_insert_point)
+    {
+        // 在线段中间插入新点
+        Polygon modified_polygon = polygon;
+        size_t insert_idx = best_segment_idx + 1;
+
+        // 获取可修改的点集合
+        ClipperLib::Path modified_points = modified_polygon.getPoints();
+        modified_points.insert(modified_points.begin() + insert_idx, closest_point_on_segment);
+
+        // 创建新的多边形
+        Polygon result_polygon(std::move(modified_points), true);
+
+        spdlog::info("螺旋模式在索引{}插入新点: ({:.2f}, {:.2f})",
+                    insert_idx, INT2MM(closest_point_on_segment.X), INT2MM(closest_point_on_segment.Y));
+        spdlog::info("螺旋模式多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
+
+        return result_polygon;
+    }
+    else
+    {
+        spdlog::info("螺旋模式最近点是现有顶点，无需插入新点");
+        return polygon;
     }
 }
 

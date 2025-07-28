@@ -17,7 +17,9 @@
 #include "utils/Simplify.h"
 #include "utils/SparsePointGrid.h" //To stitch the inner contour.
 #include "utils/actions/smooth.h"
+#include "utils/linearAlg2D.h"
 #include "utils/polygonUtils.h"
+#include "settings/ZSeamConfig.h"
 
 namespace cura
 {
@@ -117,6 +119,23 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     }
 
     prepared_outline = prepared_outline.removeNearSelfIntersections();
+
+    // === 新策略：在多边形预处理阶段插入Z接缝插值点 ===
+    // 这确保插值点在所有后续处理中都存在
+    if (settings_.get<bool>("draw_z_seam_enable") && settings_.get<bool>("z_seam_point_interpolation"))
+    {
+        spdlog::info("=== 开始Z接缝点预处理插值 ===");
+        coord_t layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
+
+        Shape processed_outline;
+        for (const Polygon& polygon : prepared_outline)
+        {
+            Polygon processed_polygon = insertZSeamInterpolationPoints(polygon, settings_, layer_z);
+            processed_outline.push_back(processed_polygon);
+        }
+        prepared_outline = processed_outline;
+        spdlog::info("Z接缝点预处理完成，处理了{}个多边形", prepared_outline.size());
+    }
 
     const coord_t wall_transition_length = settings_.get<coord_t>("wall_transition_length");
 
@@ -335,16 +354,32 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
         spdlog::debug("第{}层墙：线宽={}, 偏移距离={}", wall_idx, current_line_width, offset_distance);
 
         // 为当前轮廓的每个多边形创建ExtrusionLine
-        for (const auto& polygon : current_outline)
+        for (const auto& original_polygon : current_outline)
         {
-            if (polygon.size() < 3) continue;  // 跳过无效多边形
+            if (original_polygon.size() < 3) continue;  // 跳过无效多边形
+
+            // === 新策略：在多边形初始化时插入Z接缝插值点 ===
+            // 只对外轮廓（wall_idx == 0）进行插值点插入
+            Polygon processed_polygon = original_polygon;
+            if (wall_idx == 0)
+            {
+                // 计算当前层的Z坐标
+                coord_t layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
+                processed_polygon = insertZSeamInterpolationPoints(original_polygon, settings_, layer_z);
+
+                if (processed_polygon.size() != original_polygon.size())
+                {
+                    spdlog::info("外轮廓插值点插入成功：顶点数 {} -> {}",
+                               original_polygon.size(), processed_polygon.size());
+                }
+            }
 
             ExtrusionLine wall_line(wall_idx, false);  // inset_idx, is_odd
 
             // 将多边形的每个点转换为ExtrusionJunction
-            for (size_t point_idx = 0; point_idx < polygon.size(); point_idx++)
+            for (size_t point_idx = 0; point_idx < processed_polygon.size(); point_idx++)
             {
-                ExtrusionJunction junction(polygon[point_idx], current_line_width, wall_idx);
+                ExtrusionJunction junction(processed_polygon[point_idx], current_line_width, wall_idx);
                 wall_line.junctions_.emplace_back(junction);
             }
 
@@ -567,6 +602,116 @@ bool WallToolPaths::removeEmptyToolPaths(std::vector<VariableWidthLines>& toolpa
             }),
         toolpaths.end());
     return toolpaths.empty();
+}
+
+Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, const Settings& settings, coord_t layer_z)
+{
+    // 检查是否启用自定义Z接缝点功能
+    if (!settings.get<bool>("draw_z_seam_enable"))
+    {
+        return polygon; // 功能未启用，返回原多边形
+    }
+
+    // 检查是否启用插值功能
+    if (!settings.get<bool>("z_seam_point_interpolation"))
+    {
+        return polygon; // 插值功能未启用，返回原多边形
+    }
+
+    // 获取Z接缝点列表
+    auto z_seam_points = settings.get<std::vector<Point3LL>>("draw_z_seam_points");
+    if (z_seam_points.empty())
+    {
+        return polygon; // 没有设置接缝点，返回原多边形
+    }
+
+    spdlog::info("=== Z接缝点插值预处理开始 ===");
+    spdlog::info("当前层Z坐标: {:.2f}mm, 多边形顶点数: {}", INT2MM(layer_z), polygon.size());
+
+    // 创建ZSeamConfig进行插值计算
+    ZSeamConfig temp_config;
+    temp_config.draw_z_seam_enable_ = true;
+    temp_config.draw_z_seam_points_ = z_seam_points;
+    temp_config.z_seam_point_interpolation_ = true;
+    temp_config.draw_z_seam_grow_ = settings.get<bool>("draw_z_seam_grow");
+    temp_config.current_layer_z_ = layer_z;
+
+    // 尝试获取插值位置
+    auto interpolated_pos = temp_config.getInterpolatedSeamPosition();
+    if (!interpolated_pos.has_value())
+    {
+        spdlog::info("插值计算失败，返回原多边形");
+        return polygon;
+    }
+
+    Point2LL target_point = interpolated_pos.value();
+    spdlog::info("插值目标点: ({:.2f}, {:.2f})", INT2MM(target_point.X), INT2MM(target_point.Y));
+
+    // 在多边形中查找最近的线段并插入插值点
+    const PointsSet& points = polygon;
+    if (points.size() < 3)
+    {
+        spdlog::info("多边形顶点数不足，返回原多边形");
+        return polygon;
+    }
+
+    coord_t min_distance_sq = std::numeric_limits<coord_t>::max();
+    size_t best_segment_idx = 0;
+    Point2LL closest_point_on_segment;
+    bool need_insert_point = false;
+
+    // 遍历所有线段，找到最近的线段
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        size_t next_i = (i + 1) % points.size();
+        Point2LL segment_start = points[i];
+        Point2LL segment_end = points[next_i];
+
+        // 计算目标点到线段的最近点
+        Point2LL closest_point = LinearAlg2D::getClosestOnLineSegment(target_point, segment_start, segment_end);
+        coord_t distance_sq = vSize2(target_point - closest_point);
+
+        if (distance_sq < min_distance_sq)
+        {
+            min_distance_sq = distance_sq;
+            best_segment_idx = i;
+            closest_point_on_segment = closest_point;
+
+            // 检查最近点是否是线段端点
+            coord_t dist_to_start = vSize2(closest_point - segment_start);
+            coord_t dist_to_end = vSize2(closest_point - segment_end);
+            const coord_t epsilon_sq = 100; // 0.01mm的平方
+
+            need_insert_point = (dist_to_start > epsilon_sq && dist_to_end > epsilon_sq);
+        }
+    }
+
+    spdlog::info("最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
+
+    if (need_insert_point)
+    {
+        // 在线段中间插入新点
+        Polygon modified_polygon = polygon;
+        size_t insert_idx = best_segment_idx + 1;
+
+        // 获取可修改的点集合
+        ClipperLib::Path modified_points = modified_polygon.getPoints();
+        modified_points.insert(modified_points.begin() + insert_idx, closest_point_on_segment);
+
+        // 创建新的多边形
+        Polygon result_polygon(std::move(modified_points), true);
+
+        spdlog::info("在索引{}插入新点: ({:.2f}, {:.2f})",
+                    insert_idx, INT2MM(closest_point_on_segment.X), INT2MM(closest_point_on_segment.Y));
+        spdlog::info("多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
+
+        return result_polygon;
+    }
+    else
+    {
+        spdlog::info("最近点是现有顶点，无需插入新点");
+        return polygon;
+    }
 }
 
 } // namespace cura

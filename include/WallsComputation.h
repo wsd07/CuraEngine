@@ -14,6 +14,7 @@ namespace cura
 
 class SliceLayer;
 class SliceLayerPart;
+class Polygon;
 
 /*!
  * Function container for computing the outer walls / insets / perimeters polygons of a layer
@@ -70,6 +71,14 @@ private:
      *        generated spiral inset.
      */
     void generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall);
+
+    /*!
+     * Insert interpolated Z seam points into polygon for spiral mode
+     * \param polygon The polygon to potentially modify
+     * \param layer_z The current layer Z coordinate
+     * \return Modified polygon with interpolated points inserted (if applicable)
+     */
+    Polygon insertZSeamInterpolationPointsForSpiral(const Polygon& polygon, coord_t layer_z);
 };
 } // namespace cura
 
