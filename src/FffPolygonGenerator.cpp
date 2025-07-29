@@ -43,6 +43,7 @@
 #include "progress/ProgressEstimatorLinear.h"
 #include "progress/ProgressStageEstimator.h"
 #include "settings/AdaptiveLayerHeights.h"
+#include "settings/HeightParameterGraph.h"
 #include "settings/types/Angle.h"
 #include "settings/types/LayerIndex.h"
 #include "utils/algorithm.h"
@@ -132,8 +133,20 @@ bool FffPolygonGenerator::sliceModel(MeshGroup* meshgroup, TimeKeeper& timeKeepe
         const auto variable_layer_height_max_variation = mesh_group_settings.get<coord_t>("adaptive_layer_height_variation");
         const auto variable_layer_height_variation_step = mesh_group_settings.get<coord_t>("adaptive_layer_height_variation_step");
         const auto adaptive_threshold = mesh_group_settings.get<coord_t>("adaptive_layer_height_threshold");
-        adaptive_layer_heights
-            = new AdaptiveLayerHeights(layer_thickness, variable_layer_height_max_variation, variable_layer_height_variation_step, adaptive_threshold, meshgroup);
+
+        // 用户定义层厚控制
+        const bool user_thickness_definition_enable = mesh_group_settings.get<bool>("user_thickness_definition_enable");
+        const HeightParameterGraph user_thickness_definition = mesh_group_settings.get<HeightParameterGraph>("user_thickness_definition");
+
+        adaptive_layer_heights = new AdaptiveLayerHeights(
+            layer_thickness,
+            variable_layer_height_max_variation,
+            variable_layer_height_variation_step,
+            adaptive_threshold,
+            meshgroup,
+            user_thickness_definition_enable,
+            user_thickness_definition
+        );
 
         // Get the amount of layers
         slice_layer_count = adaptive_layer_heights->getLayerCount();

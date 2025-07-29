@@ -23,6 +23,7 @@
 #include "geometry/Shape.h"
 #include "settings/EnumSettings.h"
 #include "settings/FlowTempGraph.h"
+#include "settings/HeightParameterGraph.h"
 #include "settings/types/Angle.h"
 #include "settings/types/Duration.h" //For duration and time settings.
 #include "settings/types/LayerIndex.h" //For layer index settings.
@@ -257,6 +258,62 @@ FlowTempGraph Settings::get<FlowTempGraph>(const std::string& key) const
             spdlog::error("Couldn't read 2D graph element [{},{}] in setting {}. Ignored.", first_substring, second_substring, key);
         }
     }
+
+    return result;
+}
+
+template<>
+HeightParameterGraph Settings::get<HeightParameterGraph>(const std::string& key) const
+{
+    std::string value_string = get<std::string>(key);
+
+    HeightParameterGraph result;
+    if (value_string.empty())
+    {
+        return result; // Empty at this point.
+    }
+    /* Match with:
+     * - the last opening bracket '['
+     * - then a bunch of characters until the first comma
+     * - a comma
+     * - a bunch of characters until the first closing bracket ']'.
+     * This matches with any substring which looks like "[ 12.5 , 0.2 ]".
+     * First number is height in mm, second is parameter value.
+     */
+    std::regex regex("(\\[([^,\\[]*),([^,\\]]*)\\])");
+
+    // Default constructor = end-of-sequence:
+    std::regex_token_iterator<std::string::iterator> rend;
+
+    const int submatches[] = { 1, 2, 3 }; // Match whole pair, first number and second number of a pair.
+    std::regex_token_iterator<std::string::iterator> match_iter(value_string.begin(), value_string.end(), regex, submatches);
+    while (match_iter != rend)
+    {
+        match_iter++; // Match the whole pair.
+        if (match_iter == rend)
+        {
+            break;
+        }
+        std::string first_substring = *match_iter++;
+        std::string second_substring = *match_iter++;
+        try
+        {
+            double height_mm = std::stod(first_substring);
+            double parameter = std::stod(second_substring);
+            coord_t height_microns = MM2INT(height_mm); // Convert mm to microns
+            result.data_.emplace_back(height_microns, parameter);
+        }
+        catch (const std::invalid_argument& e)
+        {
+            spdlog::error("Couldn't read height-parameter graph element [{},{}] in setting {}. Ignored.", first_substring, second_substring, key);
+        }
+    }
+
+    // Sort by height to ensure proper interpolation
+    std::sort(result.data_.begin(), result.data_.end(),
+              [](const HeightParameterGraph::Datum& a, const HeightParameterGraph::Datum& b) {
+                  return a.height_ < b.height_;
+              });
 
     return result;
 }

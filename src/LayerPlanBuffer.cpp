@@ -535,7 +535,7 @@ void LayerPlanBuffer::insertTempCommands()
             assert(extruder_plan.estimates_.material == 0.0 && "No extrusion time should mean no material usage!");
         }
 
-        Temperature print_temp = preheat_config_.getTemp(extruder, extruder_plan.is_initial_layer_);
+        Temperature print_temp = preheat_config_.getTemp(extruder, extruder_plan.is_initial_layer_, layer_plan.z_);
         Temperature initial_print_temp = extruder_settings.get<Temperature>("material_initial_print_temperature");
 
         if (extruder_plan.temperature_factor_ > 0) // force lower printing temperatures due to minimum layer time

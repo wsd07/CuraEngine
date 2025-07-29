@@ -9,7 +9,10 @@
 #include "ExtruderTrain.h"
 #include "Slice.h"
 #include "settings/FlowTempGraph.h"
+#include "settings/HeightParameterGraph.h"
 #include "settings/types/Ratio.h"
+#include "settings/EnumSettings.h"
+#include "raft.h"
 
 namespace cura
 {
@@ -42,6 +45,81 @@ Duration Preheat::getTimeToGoFromTempToTemp(const size_t extruder, const Tempera
 Temperature Preheat::getTemp(const size_t extruder, const bool is_initial_layer)
 {
     const Settings& extruder_settings = Application::getInstance().current_slice_->scene.extruders[extruder].settings_;
+    if (is_initial_layer && extruder_settings.get<Temperature>("material_print_temperature_layer_0") != 0)
+    {
+        return extruder_settings.get<Temperature>("material_print_temperature_layer_0");
+    }
+    return extruder_settings.get<Temperature>("material_print_temperature");
+}
+
+Temperature Preheat::getTemp(const size_t extruder, const bool is_initial_layer, const coord_t layer_z)
+{
+    const Settings& extruder_settings = Application::getInstance().current_slice_->scene.extruders[extruder].settings_;
+
+    // === 首层温度保护：首层参数不受可变参数影响 ===
+    if (is_initial_layer)
+    {
+        Temperature layer_0_temp = extruder_settings.get<Temperature>("material_print_temperature_layer_0");
+        if (layer_0_temp != 0)
+        {
+            spdlog::debug("首层温度保护: 使用layer_0温度 {:.0f}°C", static_cast<double>(layer_0_temp));
+            return layer_0_temp;
+        }
+        else
+        {
+            // 如果没有设置layer_0温度，使用基础温度
+            Temperature base_temp = extruder_settings.get<Temperature>("material_print_temperature");
+            spdlog::debug("首层温度保护: 使用基础温度 {:.0f}°C", static_cast<double>(base_temp));
+            return base_temp;
+        }
+    }
+
+    // === 用户定义温度控制（仅非首层） ===
+    if (extruder_settings.get<bool>("user_temperature_definition_enable"))
+    {
+        auto user_temperature_definition = extruder_settings.get<HeightParameterGraph>("user_temperature_definition");
+        if (!user_temperature_definition.isEmpty())
+        {
+            // 计算模型实体高度：扣除raft厚度和间隙
+            coord_t model_height = layer_z;
+
+            const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+            if (mesh_group_settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::RAFT)
+            {
+                // 获取raft总厚度
+                coord_t raft_total_thickness = Raft::getTotalThickness();
+
+                // 获取raft间隙
+                const ExtruderTrain& raft_surface_train = mesh_group_settings.get<ExtruderTrain&>("raft_surface_extruder_nr");
+                coord_t raft_airgap = raft_surface_train.settings_.get<coord_t>("raft_airgap");
+
+                // 计算模型实体高度
+                model_height = layer_z - raft_total_thickness - raft_airgap;
+
+                spdlog::debug("Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型高度={:.2f}mm",
+                             INT2MM(layer_z), INT2MM(raft_total_thickness), INT2MM(raft_airgap), INT2MM(model_height));
+            }
+
+            // 如果模型高度为负数，说明还在raft层，使用基础温度
+            if (model_height < 0)
+            {
+                Temperature base_temp = extruder_settings.get<Temperature>("material_print_temperature");
+                spdlog::debug("Raft层温度: 使用基础温度 {:.0f}°C", static_cast<double>(base_temp));
+                return base_temp;
+            }
+
+            // 获取基础温度作为默认值
+            Temperature base_temp = extruder_settings.get<Temperature>("material_print_temperature");
+
+            // 根据模型实体高度获取用户定义的温度
+            double user_temp = user_temperature_definition.getParameter(model_height, base_temp);
+
+            spdlog::debug("用户定义温度控制: 模型高度={:.2f}mm, 温度={:.0f}°C", INT2MM(model_height), user_temp);
+            return Temperature(user_temp);
+        }
+    }
+
+    // === 原有温度逻辑 ===
     if (is_initial_layer && extruder_settings.get<Temperature>("material_print_temperature_layer_0") != 0)
     {
         return extruder_settings.get<Temperature>("material_print_temperature_layer_0");

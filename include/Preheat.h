@@ -10,6 +10,7 @@
 #include "settings/types/Duration.h"
 #include "settings/types/Ratio.h"
 #include "settings/types/Temperature.h"
+#include "utils/Coord_t.h"
 
 namespace cura
 {
@@ -49,6 +50,16 @@ public:
      * \return The corresponding optimal temperature
      */
     Temperature getTemp(const size_t extruder, const bool is_initial_layer);
+
+    /*!
+     * Get the optimal temperature with user-defined temperature control support.
+     *
+     * \param extruder The extruder train
+     * \param is_initial_layer Whether the initial layer temperature should be returned instead of flow-based temperature
+     * \param layer_z The Z coordinate of the current layer (for user-defined temperature control)
+     * \return The corresponding optimal temperature
+     */
+    Temperature getTemp(const size_t extruder, const bool is_initial_layer, const coord_t layer_z);
 
     /*!
      * Decide when to start warming up again after starting to cool down towards \p temp_mid.

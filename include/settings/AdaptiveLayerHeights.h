@@ -6,6 +6,7 @@
 
 #include "MeshGroup.h"
 #include "utils/Coord_t.h"
+#include "settings/HeightParameterGraph.h"
 
 namespace cura
 {
@@ -58,8 +59,11 @@ public:
      * \param threshold Threshold to compare the tangent of the steepest slope
      * to.
      * \param meshgroup The meshgroup to process.
+     * \param user_thickness_definition_enable Whether to use user-defined thickness control.
+     * \param user_thickness_definition The user-defined height-thickness graph.
      */
-    AdaptiveLayerHeights(const coord_t base_layer_height, const coord_t variation, const coord_t step_size, const coord_t threshold, const MeshGroup* meshgroup);
+    AdaptiveLayerHeights(const coord_t base_layer_height, const coord_t variation, const coord_t step_size, const coord_t threshold, const MeshGroup* meshgroup,
+                        const bool user_thickness_definition_enable = false, const HeightParameterGraph& user_thickness_definition = HeightParameterGraph());
 
 private:
     /*!
@@ -102,6 +106,16 @@ private:
     const MeshGroup* meshgroup_;
 
     /*!
+     * Whether to use user-defined thickness control
+     */
+    bool user_thickness_definition_enable_;
+
+    /*!
+     * User-defined height-thickness graph
+     */
+    HeightParameterGraph user_thickness_definition_;
+
+    /*!
      * Calculate the allowed layer heights depending on variation and step input
      */
     void calculateAllowedLayerHeights();
@@ -116,6 +130,20 @@ private:
      * These are uses later by calculateLayers to find the steepest triangle in a potential layer.
      */
     void calculateMeshTriangleSlopes();
+
+    /*!
+     * Calculate layers using user-defined thickness control
+     * \param model_max_z Maximum Z coordinate of the model
+     * \param z_level Current Z level (after first layer)
+     */
+    void calculateLayersWithUserDefinedThickness(const coord_t model_max_z, coord_t z_level);
+
+    /*!
+     * Calculate layers using original triangle slope-based adaptive method
+     * \param model_max_z Maximum Z coordinate of the model
+     * \param z_level Current Z level (after first layer)
+     */
+    void calculateLayersWithTriangleSlopes(const coord_t model_max_z, coord_t z_level);
 };
 
 } // namespace cura

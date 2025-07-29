@@ -13,6 +13,7 @@
 #include "settings/EnumSettings.h"
 #include "settings/types/Angle.h"
 #include "utils/Point3D.h"
+#include <spdlog/spdlog.h>
 
 namespace cura
 {
@@ -22,12 +23,15 @@ AdaptiveLayer::AdaptiveLayer(const coord_t layer_height)
 {
 }
 
-AdaptiveLayerHeights::AdaptiveLayerHeights(const coord_t base_layer_height, const coord_t variation, const coord_t step_size, const coord_t threshold, const MeshGroup* meshgroup)
+AdaptiveLayerHeights::AdaptiveLayerHeights(const coord_t base_layer_height, const coord_t variation, const coord_t step_size, const coord_t threshold, const MeshGroup* meshgroup,
+                                         const bool user_thickness_definition_enable, const HeightParameterGraph& user_thickness_definition)
     : base_layer_height_{ base_layer_height }
     , max_variation_{ variation }
     , step_size_{ step_size }
     , threshold_{ threshold }
     , meshgroup_{ meshgroup }
+    , user_thickness_definition_enable_{ user_thickness_definition_enable }
+    , user_thickness_definition_{ user_thickness_definition }
 {
     calculateAllowedLayerHeights();
     calculateMeshTriangleSlopes();
@@ -61,13 +65,9 @@ void AdaptiveLayerHeights::calculateAllowedLayerHeights()
 
 void AdaptiveLayerHeights::calculateLayers()
 {
-    const coord_t minimum_layer_height = *std::min_element(allowed_layer_heights_.begin(), allowed_layer_heights_.end());
     Settings const& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
-    auto slicing_tolerance = mesh_group_settings.get<SlicingTolerance>("slicing_tolerance");
-    std::vector<size_t> triangles_of_interest;
     const coord_t model_max_z = meshgroup_->max().z_;
     coord_t z_level = 0;
-    coord_t previous_layer_height = 0;
 
     // the first layer has it's own independent height set, so we always add that
     const auto initial_layer_height = mesh_group_settings.get<coord_t>("layer_height_0");
@@ -75,8 +75,77 @@ void AdaptiveLayerHeights::calculateLayers()
 
     AdaptiveLayer adaptive_layer(initial_layer_height);
     adaptive_layer.z_position_ = z_level;
-    previous_layer_height = adaptive_layer.layer_height_;
     layers_.push_back(adaptive_layer);
+
+    // === 用户定义层厚模式 ===
+    if (user_thickness_definition_enable_ && !user_thickness_definition_.isEmpty())
+    {
+        spdlog::info("=== 使用用户定义层厚模式 ===");
+        calculateLayersWithUserDefinedThickness(model_max_z, z_level);
+        return;
+    }
+
+    // === 原有的基于三角面倾斜度的自适应层厚模式 ===
+    spdlog::info("=== 使用基于三角面倾斜度的自适应层厚模式 ===");
+    calculateLayersWithTriangleSlopes(model_max_z, z_level);
+}
+
+void AdaptiveLayerHeights::calculateLayersWithUserDefinedThickness(const coord_t model_max_z, coord_t z_level)
+{
+    spdlog::info("开始用户定义层厚计算，模型最大高度: {:.2f}mm", INT2MM(model_max_z));
+
+    // 循环生成层直到达到模型顶部
+    while (z_level < model_max_z)
+    {
+        // 根据当前高度获取用户定义的层厚（单位：mm）
+        double thickness_mm = user_thickness_definition_.getParameter(z_level, INT2MM(base_layer_height_));
+        coord_t layer_thickness = MM2INT(thickness_mm); // 转换为微米
+
+        // 确保层厚在合理范围内
+        if (layer_thickness <= 0)
+        {
+            spdlog::warn("用户定义层厚 {:.3f}mm 无效，使用基础层厚 {:.3f}mm",
+                        thickness_mm, INT2MM(base_layer_height_));
+            layer_thickness = base_layer_height_;
+        }
+
+        z_level += layer_thickness;
+
+        // 如果超过模型高度，调整最后一层的厚度
+        if (z_level > model_max_z)
+        {
+            coord_t adjusted_thickness = layer_thickness - (z_level - model_max_z);
+            if (adjusted_thickness > 0)
+            {
+                z_level = model_max_z;
+                layer_thickness = adjusted_thickness;
+                spdlog::debug("调整最后一层厚度为 {:.3f}mm", INT2MM(layer_thickness));
+            }
+            else
+            {
+                // 如果调整后厚度为0或负数，移除这一层
+                break;
+            }
+        }
+
+        AdaptiveLayer adaptive_layer(layer_thickness);
+        adaptive_layer.z_position_ = z_level;
+        layers_.push_back(adaptive_layer);
+
+        spdlog::debug("添加层: Z={:.2f}mm, 厚度={:.3f}mm",
+                     INT2MM(z_level), INT2MM(layer_thickness));
+    }
+
+    spdlog::info("用户定义层厚计算完成，总层数: {}", layers_.size());
+}
+
+void AdaptiveLayerHeights::calculateLayersWithTriangleSlopes(const coord_t model_max_z, coord_t z_level)
+{
+    const coord_t minimum_layer_height = *std::min_element(allowed_layer_heights_.begin(), allowed_layer_heights_.end());
+    Settings const& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+    auto slicing_tolerance = mesh_group_settings.get<SlicingTolerance>("slicing_tolerance");
+    std::vector<size_t> triangles_of_interest;
+    coord_t previous_layer_height = layers_.back().layer_height_;
 
     // loop while triangles are found
     while (z_level <= model_max_z || layers_.size() < 2)

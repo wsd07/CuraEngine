@@ -30,7 +30,10 @@
 #include "raft.h" // getTotalExtraLayers
 #include "range/v3/view/chunk_by.hpp"
 #include "settings/types/Ratio.h"
+#include "settings/HeightParameterGraph.h"
+#include "settings/EnumSettings.h"
 #include "sliceDataStorage.h"
+#include "raft.h"
 #include "utils/Simplify.h"
 #include "utils/linearAlg2D.h"
 #include "utils/math.h"
@@ -2452,12 +2455,63 @@ void LayerPlan::writeTravelSegment(
 
 void LayerPlan::sendLineTo(const GCodePath& path, const Point3LL& position, const double extrude_speed, const std::optional<coord_t>& line_thickness)
 {
+    // === 首层速度保护：首层参数不受可变参数影响 ===
+    double final_extrude_speed = extrude_speed;
+
+    // 获取当前挤出机设置
+    const Settings& extruder_settings = Application::getInstance().current_slice_->scene.extruders[getExtruder()].settings_;
+
+    // 首层不应用用户定义的速度控制
+    if (layer_nr_ > 0 && extruder_settings.get<bool>("user_speed_ratio_definition_enable"))
+    {
+        auto user_speed_ratio_definition = extruder_settings.get<HeightParameterGraph>("user_speed_ratio_definition");
+        if (!user_speed_ratio_definition.isEmpty())
+        {
+            // 计算模型实体高度：扣除raft厚度和间隙
+            coord_t current_z = z_ + path.z_offset + position.z_;
+            coord_t model_height = current_z;
+
+            const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+            if (mesh_group_settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::RAFT)
+            {
+                // 获取raft总厚度
+                coord_t raft_total_thickness = Raft::getTotalThickness();
+
+                // 获取raft间隙
+                const ExtruderTrain& raft_surface_train = mesh_group_settings.get<ExtruderTrain&>("raft_surface_extruder_nr");
+                coord_t raft_airgap = raft_surface_train.settings_.get<coord_t>("raft_airgap");
+
+                // 计算模型实体高度
+                model_height = current_z - raft_total_thickness - raft_airgap;
+            }
+
+            // 如果模型高度为负数，说明还在raft层，不应用速度控制
+            if (model_height >= 0)
+            {
+                double speed_ratio_percent = user_speed_ratio_definition.getParameter(model_height, 100.0);
+
+                // 将百分比转换为倍数（100% = 1.0）
+                double speed_multiplier = speed_ratio_percent / 100.0;
+
+                // 应用速度倍数
+                final_extrude_speed = extrude_speed * speed_multiplier;
+
+                spdlog::debug("LayerPlan速度控制: 层{}, 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
+                             layer_nr_, INT2MM(model_height), extrude_speed, speed_ratio_percent, final_extrude_speed);
+            }
+        }
+    }
+    else if (layer_nr_ == 0)
+    {
+        spdlog::debug("首层速度保护: 层{}, 使用原始速度={:.1f}mm/s", layer_nr_, extrude_speed);
+    }
+
     Application::getInstance().communication_->sendLineTo(
         path.config.type,
         position + Point3LL(0, 0, z_ + path.z_offset),
         path.getLineWidthForLayerView(),
         line_thickness.value_or(path.config.getLayerThickness() + path.z_offset + position.z_),
-        extrude_speed);
+        final_extrude_speed);
 }
 
 void LayerPlan::writeTravelRelativeZ(GCodeExport& gcode, const Point3LL& position, const Velocity& speed, const coord_t path_z_offset, const std::optional<double> retract_distance)

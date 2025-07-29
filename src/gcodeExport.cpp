@@ -21,7 +21,10 @@
 #include "settings/types/LayerIndex.h"
 #include "sliceDataStorage.h"
 #include "utils/Date.h"
-#include "utils/string.h" // MMtoStream, PrecisionedDouble
+#include "utils/string.h"
+#include "settings/HeightParameterGraph.h"
+#include "settings/EnumSettings.h"
+#include "raft.h" // MMtoStream, PrecisionedDouble
 
 namespace cura
 {
@@ -1129,10 +1132,63 @@ void GCodeExport::writeFXYZE(
     const PrintFeatureType& feature,
     const std::optional<RetractionAmounts>& retraction_amounts)
 {
-    if (current_speed_ != speed)
+    // === 首层速度保护：首层参数不受可变参数影响 ===
+    Velocity final_speed = speed;
+
+    // 获取当前挤出机设置
+    const Settings& extruder_settings = Application::getInstance().current_slice_->scene.extruders[current_extruder_].settings_;
+
+    // 首层不应用用户定义的速度控制（通过Z坐标判断）
+    const coord_t layer_height_0 = extruder_settings.get<coord_t>("layer_height_0");
+    const bool is_first_layer = (z <= layer_height_0 + 10); // 10微米容差
+
+    if (!is_first_layer && extruder_settings.get<bool>("user_speed_ratio_definition_enable"))
     {
-        *output_stream_ << " F" << PrecisionedDouble{ 1, speed * 60 };
-        current_speed_ = speed;
+        auto user_speed_ratio_definition = extruder_settings.get<HeightParameterGraph>("user_speed_ratio_definition");
+        if (!user_speed_ratio_definition.isEmpty())
+        {
+            // 计算模型实体高度：扣除raft厚度和间隙
+            coord_t model_height = z;
+
+            const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+            if (mesh_group_settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::RAFT)
+            {
+                // 获取raft总厚度
+                coord_t raft_total_thickness = Raft::getTotalThickness();
+
+                // 获取raft间隙
+                const ExtruderTrain& raft_surface_train = mesh_group_settings.get<ExtruderTrain&>("raft_surface_extruder_nr");
+                coord_t raft_airgap = raft_surface_train.settings_.get<coord_t>("raft_airgap");
+
+                // 计算模型实体高度
+                model_height = z - raft_total_thickness - raft_airgap;
+            }
+
+            // 如果模型高度为负数，说明还在raft层，不应用速度控制
+            if (model_height >= 0)
+            {
+                double speed_ratio_percent = user_speed_ratio_definition.getParameter(model_height, 100.0);
+
+                // 将百分比转换为倍数（100% = 1.0）
+                double speed_multiplier = speed_ratio_percent / 100.0;
+
+                // 应用速度倍数
+                final_speed = speed * speed_multiplier;
+
+                spdlog::debug("用户定义速度控制: 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
+                             INT2MM(model_height), static_cast<double>(speed), speed_ratio_percent, static_cast<double>(final_speed));
+            }
+        }
+    }
+    else if (is_first_layer)
+    {
+        spdlog::debug("首层速度保护: Z={:.2f}mm, 使用原始速度={:.1f}mm/s", INT2MM(z), static_cast<double>(speed));
+    }
+
+    if (current_speed_ != final_speed)
+    {
+        *output_stream_ << " F" << PrecisionedDouble{ 1, final_speed * 60 };
+        current_speed_ = final_speed;
     }
 
     Point2LL gcode_pos = getGcodePos(x, y, current_extruder_);
@@ -1160,7 +1216,7 @@ void GCodeExport::writeFXYZE(
     *output_stream_ << new_line_;
 
     current_position_ = Point3LL(x, y, z);
-    estimate_calculator_.plan(TimeEstimateCalculator::Position(INT2MM(x), INT2MM(y), INT2MM(z), eToMm(e)), speed, feature);
+    estimate_calculator_.plan(TimeEstimateCalculator::Position(INT2MM(x), INT2MM(y), INT2MM(z), eToMm(e)), final_speed, feature);
 }
 
 void GCodeExport::writeUnretractionAndPrime()
