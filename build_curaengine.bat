@@ -264,41 +264,90 @@ if "%NO_DEPLOY%"=="true" (
 
 echo Step 7: Copying CuraEngine.exe to Cura directory...
 set CURA_DIR=C:\Users\wsd07\vscode\Cura-Dev\Cura
+set BUILD_DIR=%~dp0build\Release
 if not exist "%CURA_DIR%" (
     echo ERROR: Cura directory not found: %CURA_DIR%
     pause
     exit /b 1
 )
 
-cmd /c copy "build\Release\CuraEngine.exe" "%CURA_DIR%\CuraEngine.exe" /Y
-if !errorlevel! neq 0 (
-    echo ERROR: Failed to copy CuraEngine.exe to Cura directory
-    pause
-    exit /b 1
-)
-echo SUCCESS: CuraEngine.exe copied to %CURA_DIR%
+REM CuraEngine.exe will be copied during Git deployment step
 
 :git_step
-REM Git commit step ^(optional^)
+REM Git deployment step ^(includes copying and committing^)
 if "%NO_GIT%"=="true" (
-    echo INFO: Skipping Git commit ^(--no-git option^)
+    echo INFO: Skipping Git deployment ^(--no-git option^)
+    if "%NO_DEPLOY%"=="false" (
+        echo INFO: Copying CuraEngine.exe locally without Git commit...
+        if not exist "%BUILD_DIR%\CuraEngine.exe" (
+            echo ERROR: CuraEngine.exe not found at %BUILD_DIR%\CuraEngine.exe
+        ) else (
+            copy "%BUILD_DIR%\CuraEngine.exe" "%CURA_DIR%\CuraEngine.exe" /Y
+            if !errorlevel! neq 0 (
+                echo ERROR: Failed to copy CuraEngine.exe to Cura directory
+            ) else (
+                echo SUCCESS: CuraEngine.exe copied to %CURA_DIR%
+            )
+        )
+    )
     goto completion
 )
 
 if "%NO_DEPLOY%"=="true" (
-    echo INFO: Skipping Git commit ^(no files deployed^)
+    echo INFO: Skipping deployment and Git commit ^(--no-deploy option^)
     goto completion
 )
 
 echo Step 8: Pushing to GitHub repository...
 cd /d "%CURA_DIR%"
+
+echo Step 8.1: Pulling latest changes from GitHub repository...
+git pull origin main --no-edit
+if !errorlevel! neq 0 (
+    echo WARNING: Pull failed ^(network issue or no changes^), continuing with current state...
+    echo INFO: This is normal if there are no remote changes or network is unavailable
+) else (
+    echo INFO: Successfully pulled latest changes from GitHub
+)
+
+echo Step 8.2: Copying new CuraEngine.exe to Cura directory...
+if not exist "%BUILD_DIR%\CuraEngine.exe" (
+    echo ERROR: CuraEngine.exe not found at %BUILD_DIR%\CuraEngine.exe
+    echo Please ensure the build completed successfully
+    goto completion
+)
+copy "%BUILD_DIR%\CuraEngine.exe" "%CURA_DIR%\CuraEngine.exe" /Y
+if !errorlevel! neq 0 (
+    echo ERROR: Failed to copy CuraEngine.exe to Cura directory
+    goto completion
+) else (
+    echo INFO: CuraEngine.exe copied successfully
+)
+
+echo Step 8.3: Adding CuraEngine.exe to Git...
 git add CuraEngine.exe
+
+echo Step 8.4: Committing CuraEngine.exe update...
 git commit -m "Update CuraEngine.exe - Built on %date% %time%"
+if !errorlevel! neq 0 (
+    echo INFO: No changes to commit ^(CuraEngine.exe is already up to date^)
+)
+
+echo Step 8.5: Pushing to GitHub...
 git push origin main
+if !errorlevel! neq 0 (
+    echo WARNING: Push failed, trying again...
+    git push origin main --force
+    if !errorlevel! neq 0 (
+        echo ERROR: Failed to push to GitHub. Please check your network connection and credentials.
+    ) else (
+        echo INFO: Force push successful
+    )
+)
 
 if !errorlevel! neq 0 (
     echo WARNING: Git push failed. Please check your GitHub credentials and network connection.
-    echo You may need to push manually: cd %CURA_DIR% ^&^& git push origin main
+    echo You may need to push manually: cd %CURA_DIR% ^&^& git push origin main --force
 ) else (
     echo SUCCESS: Changes pushed to GitHub repository
 )
