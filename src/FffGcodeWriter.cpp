@@ -33,6 +33,7 @@
 #include "infill.h"
 #include "progress/Progress.h"
 #include "raft.h"
+#include "settings/HeightParameterGraph.h"
 #include "utils/Simplify.h" //Removing micro-segments created by offsetting.
 #include "utils/ThreadPool.h"
 #include "utils/linearAlg2D.h"
@@ -3117,16 +3118,46 @@ bool FffGcodeWriter::processInsets(
     {
         const auto initial_bottom_layers = LayerIndex(mesh.settings.get<size_t>("initial_bottom_layers"));
         const auto layer_nr = gcode_layer.getLayerNr();
+
+        // 检查是否定义了magic_spiralize_range
+        HeightRangeList magic_spiralize_range = mesh.settings.get<HeightRangeList>("magic_spiralize_range");
+        bool should_spiralize = false;
+
+        if (!magic_spiralize_range.isEmpty())
+        {
+            // 使用范围控制：计算当前层的模型净高度
+            coord_t layer_z = 0;
+            if (layer_nr >= 0)
+            {
+                const coord_t layer_height = mesh.settings.get<coord_t>("layer_height");
+                const coord_t initial_layer_thickness = mesh.settings.get<coord_t>("layer_height_0");
+
+                if (layer_nr == 0)
+                {
+                    layer_z = initial_layer_thickness;
+                }
+                else
+                {
+                    layer_z = initial_layer_thickness + (layer_nr - 1) * layer_height;
+                }
+            }
+
+            should_spiralize = magic_spiralize_range.isInRange(layer_z);
+        }
+        else
+        {
+            // 使用原有的initial_bottom_layers逻辑
+            should_spiralize = layer_nr >= initial_bottom_layers;
+        }
+
         if ((layer_nr < initial_bottom_layers && part.wall_toolpaths.empty()) // The bottom layers in spiralize mode are generated using the variable width paths
             || (layer_nr >= initial_bottom_layers && part.spiral_wall.empty())) // The rest of the layers in spiralize mode are using the spiral wall
         {
             // nothing to do
             return false;
         }
-        if (gcode_layer.getLayerNr() >= initial_bottom_layers)
-        {
-            spiralize = true;
-        }
+
+        spiralize = should_spiralize;
         if (spiralize && gcode_layer.getLayerNr() == initial_bottom_layers && extruder_nr == mesh.settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr_)
         { // on the last normal layer first make the outer wall normally and then start a second outer wall from the same hight, but gradually moving upward
             added_something = true;

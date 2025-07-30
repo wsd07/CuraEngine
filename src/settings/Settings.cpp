@@ -319,6 +319,60 @@ HeightParameterGraph Settings::get<HeightParameterGraph>(const std::string& key)
 }
 
 template<>
+HeightRangeList Settings::get<HeightRangeList>(const std::string& key) const
+{
+    std::string value_string = get<std::string>(key);
+
+    HeightRangeList result;
+    if (value_string.empty())
+    {
+        return result; // Empty at this point.
+    }
+    /* Match with:
+     * - the last opening bracket '['
+     * - then a bunch of characters until the first comma
+     * - a comma
+     * - a bunch of characters until the first closing bracket ']'.
+     * This matches with any substring which looks like "[ 2.5 , 15 ]".
+     * First number is min height in mm, second is max height in mm.
+     */
+    std::regex regex("(\\[([^,\\[]*),([^,\\]]*)\\])");
+
+    // Default constructor = end-of-sequence:
+    std::regex_token_iterator<std::string::iterator> rend;
+
+    const int submatches[] = { 1, 2, 3 }; // Match whole pair, first number and second number of a pair.
+    std::regex_token_iterator<std::string::iterator> match_iter(value_string.begin(), value_string.end(), regex, submatches);
+    while (match_iter != rend)
+    {
+        match_iter++; // Match the whole pair.
+        if (match_iter == rend)
+        {
+            break;
+        }
+        std::string first_substring = *match_iter++;
+        std::string second_substring = *match_iter++;
+        try
+        {
+            double min_height_mm = std::stod(first_substring);
+            double max_height_mm = std::stod(second_substring);
+            coord_t min_height_microns = MM2INT(min_height_mm); // Convert mm to microns
+            coord_t max_height_microns = MM2INT(max_height_mm); // Convert mm to microns
+            result.addRange(min_height_microns, max_height_microns);
+        }
+        catch (const std::invalid_argument& e)
+        {
+            spdlog::error("Couldn't read height range element [{},{}] in setting {}. Ignored.", first_substring, second_substring, key);
+        }
+    }
+
+    // Sort ranges by minimum height for consistency
+    result.sortRanges();
+
+    return result;
+}
+
+template<>
 Shape Settings::get<Shape>(const std::string& key) const
 {
     std::string value_string = get<std::string>(key);

@@ -3469,7 +3469,37 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                         length += vSizeMM(p0 - p1_2d);
                         p0 = p1_2d;
 
-                        const coord_t z_offset = end_layer ? layer_thickness_ / 2 : std::round(layer_thickness_ * length / totalLength);
+                        // 检查是否启用平滑螺旋Z坐标功能
+                        const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
+
+                        coord_t z_offset;
+                        if (smooth_spiralized_z)
+                        {
+                            // 启用平滑Z：按照路径进展比例线性增加Z坐标
+                            z_offset = end_layer ? layer_thickness_ / 2 : std::round(layer_thickness_ * length / totalLength);
+
+                            // 只在第一个点时输出日志，避免过多日志
+                            static bool first_smooth_z_log = true;
+                            if (first_smooth_z_log)
+                            {
+                                spdlog::info("【平滑螺旋Z】启用平滑Z坐标上升，Z偏移={:.3f}mm，进度={:.1f}%",
+                                           INT2MM(z_offset), (length / totalLength) * 100.0);
+                                first_smooth_z_log = false;
+                            }
+                        }
+                        else
+                        {
+                            // 禁用平滑Z：保持当前层的Z坐标不变
+                            z_offset = 0;
+
+                            // 只在第一个点时输出日志，避免过多日志
+                            static bool first_no_smooth_z_log = true;
+                            if (first_no_smooth_z_log)
+                            {
+                                spdlog::info("【平滑螺旋Z】禁用平滑Z坐标上升，保持层高不变");
+                                first_no_smooth_z_log = false;
+                            }
+                        }
                         const double extrude_speed = speed * spiral_path.speed_back_pressure_factor;
                         writeExtrusionRelativeZ(
                             gcode,

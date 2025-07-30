@@ -16,6 +16,7 @@
 #include "ExtruderTrain.h"
 #include "Slice.h"
 #include "WallToolPaths.h"
+#include "settings/HeightParameterGraph.h"
 #include "settings/types/Ratio.h"
 #include "settings/ZSeamConfig.h"
 #include "sliceDataStorage.h"
@@ -49,7 +50,55 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
         return;
     }
 
-    const bool spiralize = settings_.get<bool>("magic_spiralize");
+    // === 检查是否应该使用螺旋模式 ===
+    bool spiralize = settings_.get<bool>("magic_spiralize");
+    if (spiralize)
+    {
+        // 检查是否定义了magic_spiralize_range
+        HeightRangeList magic_spiralize_range = settings_.get<HeightRangeList>("magic_spiralize_range");
+        if (!magic_spiralize_range.isEmpty())
+        {
+            // 计算当前层的模型净高度（复用现有逻辑）
+            coord_t layer_z = 0;
+            if (layer_nr_ >= 0)
+            {
+                const coord_t layer_height = settings_.get<coord_t>("layer_height");
+                const coord_t initial_layer_thickness = settings_.get<coord_t>("layer_height_0");
+
+                if (layer_nr_ == 0)
+                {
+                    layer_z = initial_layer_thickness;
+                }
+                else
+                {
+                    layer_z = initial_layer_thickness + (layer_nr_ - 1) * layer_height;
+                }
+            }
+
+            // 检查当前高度是否在指定范围内
+            bool in_range = magic_spiralize_range.isInRange(layer_z);
+            spiralize = in_range;
+
+            // 调试信息
+            spdlog::info("【螺旋范围控制】第{}层，高度{:.3f}mm，范围检查结果：{}，螺旋模式：{}",
+                         layer_nr_, layer_z / 1000.0, in_range ? "在范围内" : "超出范围", spiralize ? "启用" : "禁用");
+        }
+        else
+        {
+            // 没有定义范围，使用原有的initial_bottom_layers逻辑
+            const size_t initial_bottom_layers = settings_.get<size_t>("initial_bottom_layers");
+            spiralize = layer_nr_ >= static_cast<LayerIndex>(initial_bottom_layers);
+
+            // 调试信息
+            spdlog::info("【螺旋传统控制】第{}层，使用initial_bottom_layers逻辑，螺旋模式：{}",
+                         layer_nr_, spiralize ? "启用" : "禁用");
+        }
+    }
+    else
+    {
+        spdlog::info("【螺旋模式关闭】第{}层，magic_spiralize=false", layer_nr_);
+    }
+
     const size_t alternate = ((layer_nr_ % 2) + 2) % 2;
     if (spiralize && layer_nr_ < LayerIndex(settings_.get<size_t>("initial_bottom_layers"))
         && alternate == 1) // Add extra insets every 2 layers when spiralizing. This makes bottoms of cups watertight.
@@ -72,6 +121,7 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
     // When spiralizing, generate the spiral insets using simple offsets instead of generating toolpaths
     if (spiralize)
     {
+        spdlog::info("【墙体生成】第{}层，生成螺旋墙体", layer_nr_);
         const bool recompute_outline_based_on_outer_wall = settings_.get<bool>("support_enable") && ! settings_.get<bool>("fill_outline_gaps");
 
         generateSpiralInsets(part, line_width_0, wall_0_inset, recompute_outline_based_on_outer_wall);
@@ -84,6 +134,7 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
     }
     else
     {
+        spdlog::info("【墙体生成】第{}层，生成正常墙体（包含inset/infill/skin）", layer_nr_);
         WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type);
         part->wall_toolpaths = wall_tool_paths.getToolPaths();
         part->inner_area = wall_tool_paths.getInnerContour();
@@ -121,6 +172,8 @@ void WallsComputation::generateWalls(SliceLayer* layer, SectionType section)
 
 void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall)
 {
+    // 注意：此函数只在确定需要螺旋模式时才被调用，所以不需要再次检查螺旋条件
+
     // === 检查是否启用only_spiralize_out_surface功能 ===
     // 当启用时，只保留最外层的多边形，舍弃内部的多边形
     // 如果参数未设置，默认为false（保持原有行为）
@@ -144,8 +197,8 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
     if (only_spiralize_out_surface && spiral_outline.size() > 1)
     {
         // 输出功能启用信息和原始状态
-        spdlog::info("=== only_spiralize_out_surface功能启用 ===");
-        spdlog::info("原始多边形数量: {}", spiral_outline.size());
+        spdlog::debug("=== only_spiralize_out_surface功能启用 ===");
+        spdlog::debug("原始多边形数量: {}", spiral_outline.size());
 
         // === 算法：基于面积大小识别最外层多边形 ===
         // 原理：在3D切片中，最外层的轮廓通常具有最大的面积
@@ -181,9 +234,9 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         spiral_outline.push_back(outer_polygon);   // 只添加最外层多边形
 
         // 输出筛选结果的详细信息
-        spdlog::info("保留最外层多边形[{}]: 面积={:.2f}mm², 顶点数={}",
+        spdlog::debug("保留最外层多边形[{}]: 面积={:.2f}mm², 顶点数={}",
                     max_area_index, INT2MM2(max_area), outer_polygon.size());
-        spdlog::info("过滤后多边形数量: {}", spiral_outline.size());
+        spdlog::debug("过滤后多边形数量: {}", spiral_outline.size());
 
         // 此时spiral_outline只包含一个多边形，即最外层的轮廓
         // 这将简化后续的螺旋路径生成，避免复杂的内部结构
@@ -250,7 +303,7 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
     // 获取Z接缝点列表
     auto z_seam_points = settings_.get<std::vector<Point3LL>>("draw_z_seam_points");
 
-    spdlog::info("螺旋模式插值处理: 层Z={:.2f}mm, 多边形顶点数={}", INT2MM(layer_z), polygon.size());
+    spdlog::debug("螺旋模式插值处理: 层Z={:.2f}mm, 多边形顶点数={}", INT2MM(layer_z), polygon.size());
 
     // 创建ZSeamConfig进行插值计算
     ZSeamConfig temp_config;
@@ -264,7 +317,7 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
     auto interpolated_pos = temp_config.getInterpolatedSeamPosition();
     if (!interpolated_pos.has_value())
     {
-        spdlog::info("螺旋模式插值计算失败，返回原多边形");
+        spdlog::debug("螺旋模式插值计算失败，返回原多边形");
         return polygon;
     }
 
@@ -275,7 +328,7 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
     const PointsSet& points = polygon;
     if (points.size() < 3)
     {
-        spdlog::info("螺旋模式多边形顶点数不足，返回原多边形");
+        spdlog::debug("螺旋模式多边形顶点数不足，返回原多边形");
         return polygon;
     }
 
@@ -325,15 +378,15 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
         // 创建新的多边形
         Polygon result_polygon(std::move(modified_points), true);
 
-        spdlog::info("螺旋模式在索引{}插入新点: ({:.2f}, {:.2f})",
+        spdlog::debug("螺旋模式在索引{}插入新点: ({:.2f}, {:.2f})",
                     insert_idx, INT2MM(closest_point_on_segment.X), INT2MM(closest_point_on_segment.Y));
-        spdlog::info("螺旋模式多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
+        spdlog::debug("螺旋模式多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
 
         return result_polygon;
     }
     else
     {
-        spdlog::info("螺旋模式最近点是现有顶点，无需插入新点");
+        spdlog::debug("螺旋模式最近点是现有顶点，无需插入新点");
         return polygon;
     }
 }

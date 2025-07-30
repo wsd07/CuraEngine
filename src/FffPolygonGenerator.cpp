@@ -16,6 +16,7 @@
 #include "ExtruderTrain.h"
 #include "FffPolygonGenerator.h"
 #include "infill.h"
+#include "settings/HeightParameterGraph.h"
 #include "InterlockingGenerator.h"
 #include "layerPart.h"
 #include "MeshGroup.h"
@@ -538,9 +539,21 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
     const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
     bool magic_spiralize = mesh_group_settings.get<bool>("magic_spiralize");
     size_t mesh_max_initial_bottom_layer_count = 0;
+
+    // 检查是否使用magic_spiralize_range
+    bool use_spiralize_range = false;
     if (magic_spiralize)
     {
         mesh_max_initial_bottom_layer_count = std::max(mesh_max_initial_bottom_layer_count, mesh.settings.get<size_t>("initial_bottom_layers"));
+
+        // 检查是否定义了magic_spiralize_range
+        HeightRangeList magic_spiralize_range = mesh.settings.get<HeightRangeList>("magic_spiralize_range");
+        use_spiralize_range = !magic_spiralize_range.isEmpty();
+
+        if (use_spiralize_range)
+        {
+            spdlog::info("【Skin/Infill处理】检测到magic_spiralize_range，为所有层生成完整数据");
+        }
     }
 
     guarded_progress.reset();
@@ -550,7 +563,18 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
         [&](size_t layer_number)
         {
             spdlog::debug("Processing skins and infill layer {} of {}", layer_number, mesh.layers.size());
-            if (! magic_spiralize || layer_number < mesh_max_initial_bottom_layer_count) // Only generate up/downskin and infill for the first X layers when spiralize is choosen.
+
+            // 修改逻辑：当使用magic_spiralize_range时，为所有层生成skin和infill
+            // 这样在后续处理时可以根据每层的实际需要选择使用螺旋或正常模式
+            bool should_process_skin_infill = true;
+            if (magic_spiralize && !use_spiralize_range)
+            {
+                // 传统magic_spiralize逻辑：只为前几层生成
+                should_process_skin_infill = (layer_number < mesh_max_initial_bottom_layer_count);
+            }
+            // 当use_spiralize_range=true时，should_process_skin_infill保持true，为所有层生成数据
+
+            if (should_process_skin_infill)
             {
                 processSkinsAndInfill(mesh, layer_number, process_infill);
             }
@@ -1284,8 +1308,8 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
                 coord_t total_circumference = 0;
                 coord_t total_area = 0;
 
-                spdlog::info("  图形[{}]: 开始分析最外层wall", part_index);
-                spdlog::info("  图形[{}]: outline包含{}个多边形", part_index, part.outline.size());
+                spdlog::debug("  图形[{}]: 开始分析最外层wall", part_index);
+                spdlog::debug("  图形[{}]: outline包含{}个多边形", part_index, part.outline.size());
 
                 // 遍历part的所有outline多边形（最外层wall）
                 for (size_t poly_idx = 0; poly_idx < part.outline.size(); ++poly_idx)
@@ -1300,7 +1324,7 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
                     coord_t polygon_area = std::abs(static_cast<coord_t>(polygon.area()));
                     total_area += polygon_area;
 
-                    spdlog::info("    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}",
+                    spdlog::debug("    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}",
                                 poly_idx, INT2MM(polygon_circumference), INT2MM2(polygon_area), polygon.size());
                 }
 

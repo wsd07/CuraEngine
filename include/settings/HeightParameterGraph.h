@@ -52,6 +52,63 @@ public:
     bool isEmpty() const;
 };
 
+/*!
+ * Class representing a list of height ranges for magic_spiralize_range parameter.
+ * Used to determine if a specific height should use spiralize mode.
+ */
+class HeightRangeList
+{
+public:
+    struct Range
+    {
+        coord_t min_height_; //!< The minimum height in microns (converted from mm)
+        coord_t max_height_; //!< The maximum height in microns (converted from mm)
+
+        Range(const coord_t min_height, const coord_t max_height)
+            : min_height_(min_height)
+            , max_height_(max_height)
+        {
+        }
+
+        /*!
+         * Check if a height is within this range
+         * \param height the height in microns
+         * \return true if height is within [min_height_, max_height_]
+         */
+        bool contains(const coord_t height) const
+        {
+            return height >= min_height_ && height <= max_height_;
+        }
+    };
+
+    std::vector<Range> ranges_; //!< The list of height ranges
+
+    /*!
+     * Check if a specific height is within any of the defined ranges.
+     * \param height the height in microns
+     * \return true if height is within any range
+     */
+    bool isInRange(const coord_t height) const;
+
+    /*!
+     * Check if the range list is empty
+     * \return true if no ranges are defined
+     */
+    bool isEmpty() const;
+
+    /*!
+     * Add a new range to the list
+     * \param min_height minimum height in microns
+     * \param max_height maximum height in microns
+     */
+    void addRange(const coord_t min_height, const coord_t max_height);
+
+    /*!
+     * Sort ranges by minimum height (for consistency)
+     */
+    void sortRanges();
+};
+
 } // namespace cura
 
 #endif // HEIGHT_PARAMETER_GRAPH_H

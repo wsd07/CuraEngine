@@ -124,7 +124,7 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     // 这确保插值点在所有后续处理中都存在
     if (settings_.get<bool>("draw_z_seam_enable") && settings_.get<bool>("z_seam_point_interpolation"))
     {
-        spdlog::info("=== 开始Z接缝点预处理插值 ===");
+        spdlog::debug("=== 开始Z接缝点预处理插值 ===");
         coord_t layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
 
         Shape processed_outline;
@@ -134,7 +134,7 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
             processed_outline.push_back(processed_polygon);
         }
         prepared_outline = processed_outline;
-        spdlog::info("Z接缝点预处理完成，处理了{}个多边形", prepared_outline.size());
+        spdlog::debug("Z接缝点预处理完成，处理了{}个多边形", prepared_outline.size());
     }
 
     const coord_t wall_transition_length = settings_.get<coord_t>("wall_transition_length");
@@ -164,17 +164,17 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     // === 核心功能：beading_strategy_enable控制 ===
     if (!beading_strategy_enable) {
         // === 完全禁用BeadingStrategy，使用传统简单偏移算法 ===
-        spdlog::info("=== BeadingStrategy系统已完全禁用 ===");
-        spdlog::info("beading_strategy_enable=false，使用传统简单偏移算法");
-        spdlog::info("这将绕过所有复杂的线宽计算，使用固定线宽偏移");
+        spdlog::debug("=== BeadingStrategy系统已完全禁用 ===");
+        spdlog::debug("beading_strategy_enable=false，使用传统简单偏移算法");
+        spdlog::debug("这将绕过所有复杂的线宽计算，使用固定线宽偏移");
 
         generateSimpleWalls(prepared_outline);
         return toolpaths_;
     }
 
     // === 原有BeadingStrategy路径 ===
-    spdlog::info("=== 使用BeadingStrategy系统 ===");
-    spdlog::info("beading_strategy_enable=true，启用复杂的线宽计算");
+    spdlog::debug("=== 使用BeadingStrategy系统 ===");
+    spdlog::debug("beading_strategy_enable=true，启用复杂的线宽计算");
 
     const size_t max_bead_count = (inset_count_ < std::numeric_limits<size_t>::max() / 2) ? 2 * inset_count_ : std::numeric_limits<size_t>::max();
     const auto beading_strat = BeadingStrategyFactory::makeStrategy(
@@ -369,7 +369,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
 
                 if (processed_polygon.size() != original_polygon.size())
                 {
-                    spdlog::info("外轮廓插值点插入成功：顶点数 {} -> {}",
+                    spdlog::debug("外轮廓插值点插入成功：顶点数 {} -> {}",
                                original_polygon.size(), processed_polygon.size());
                 }
             }
@@ -404,8 +404,8 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
     // 标记工具路径已生成
     toolpaths_generated_ = true;
 
-    spdlog::info("=== 传统简单偏移算法完成 ===");
-    spdlog::info("成功生成{}层墙，内部轮廓多边形数: {}", inset_count_, inner_contour_.size());
+    spdlog::debug("=== 传统简单偏移算法完成 ===");
+    spdlog::debug("成功生成{}层墙，内部轮廓多边形数: {}", inset_count_, inner_contour_.size());
 
     // 统计生成的路径数量
     size_t total_lines = 0;
@@ -414,7 +414,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
         total_lines += toolpaths_[i].size();
         spdlog::debug("第{}层墙包含{}条路径", i, toolpaths_[i].size());
     }
-    spdlog::info("总共生成{}条打印路径", total_lines);
+    spdlog::debug("总共生成{}条打印路径", total_lines);
 }
 
 void WallToolPaths::removeSmallFillLines(std::vector<VariableWidthLines>& toolpaths)
@@ -625,8 +625,8 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         return polygon; // 没有设置接缝点，返回原多边形
     }
 
-    spdlog::info("=== Z接缝点插值预处理开始 ===");
-    spdlog::info("当前层Z坐标: {:.2f}mm, 多边形顶点数: {}", INT2MM(layer_z), polygon.size());
+    spdlog::debug("=== Z接缝点插值预处理开始 ===");
+    spdlog::debug("当前层Z坐标: {:.2f}mm, 多边形顶点数: {}", INT2MM(layer_z), polygon.size());
 
     // 创建ZSeamConfig进行插值计算
     ZSeamConfig temp_config;
@@ -640,7 +640,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
     auto interpolated_pos = temp_config.getInterpolatedSeamPosition();
     if (!interpolated_pos.has_value())
     {
-        spdlog::info("插值计算失败，返回原多边形");
+        spdlog::debug("插值计算失败，返回原多边形");
         return polygon;
     }
 
@@ -651,7 +651,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
     const PointsSet& points = polygon;
     if (points.size() < 3)
     {
-        spdlog::info("多边形顶点数不足，返回原多边形");
+        spdlog::debug("多边形顶点数不足，返回原多边形");
         return polygon;
     }
 
@@ -686,7 +686,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         }
     }
 
-    spdlog::info("最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
+    spdlog::debug("最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
 
     if (need_insert_point)
     {
@@ -701,15 +701,15 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         // 创建新的多边形
         Polygon result_polygon(std::move(modified_points), true);
 
-        spdlog::info("在索引{}插入新点: ({:.2f}, {:.2f})",
+        spdlog::debug("在索引{}插入新点: ({:.2f}, {:.2f})",
                     insert_idx, INT2MM(closest_point_on_segment.X), INT2MM(closest_point_on_segment.Y));
-        spdlog::info("多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
+        spdlog::debug("多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
 
         return result_polygon;
     }
     else
     {
-        spdlog::info("最近点是现有顶点，无需插入新点");
+        spdlog::debug("最近点是现有顶点，无需插入新点");
         return polygon;
     }
 }

@@ -3,6 +3,7 @@
 
 #include "settings/HeightParameterGraph.h"
 
+#include <algorithm>
 #include <spdlog/spdlog.h>
 
 namespace cura
@@ -56,6 +57,36 @@ double HeightParameterGraph::getParameter(const coord_t height, const double def
 bool HeightParameterGraph::isEmpty() const
 {
     return data_.empty();
+}
+
+bool HeightRangeList::isInRange(const coord_t height) const
+{
+    for (const Range& range : ranges_)
+    {
+        if (range.contains(height))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HeightRangeList::isEmpty() const
+{
+    return ranges_.empty();
+}
+
+void HeightRangeList::addRange(const coord_t min_height, const coord_t max_height)
+{
+    ranges_.emplace_back(min_height, max_height);
+}
+
+void HeightRangeList::sortRanges()
+{
+    std::sort(ranges_.begin(), ranges_.end(),
+              [](const Range& a, const Range& b) {
+                  return a.min_height_ < b.min_height_;
+              });
 }
 
 } // namespace cura
