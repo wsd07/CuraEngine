@@ -911,6 +911,319 @@ void LayerPlan::addPolygonsByOptimizer(
     }
 }
 
+void LayerPlan::addSpiralTransitionWall(
+    const Shape& polygons,
+    const GCodePathConfig& config,
+    const Settings& settings,
+    size_t start_vertex_idx)
+{
+    if (polygons.empty())
+    {
+        return;
+    }
+
+    // 只处理第一个多边形（螺旋模式通常只有一个外墙）
+    const Polygon& polygon = polygons[0];
+    if (polygon.empty() || start_vertex_idx >= polygon.size())
+    {
+        return;
+    }
+
+    // 计算多边形的总长度
+    double total_length = 0.0;
+    for (size_t i = 0; i < polygon.size(); i++)
+    {
+        size_t next_i = (i + 1) % polygon.size();
+        total_length += vSizeMM(polygon[next_i] - polygon[i]);
+    }
+
+    if (total_length <= 0.0)
+    {
+        return;
+    }
+
+    // 计算切分参数
+    const double perimeter_1_percent = total_length * 0.01; // 周长的1%
+    const double min_segment_length = 1.0; // 1mm的最小段长度
+    const double target_segment_length = std::max(perimeter_1_percent, min_segment_length);
+
+    spdlog::debug("【螺旋过渡】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
+                 perimeter_1_percent, min_segment_length, target_segment_length);
+
+    // 生成细分后的点序列
+    std::vector<Point2LL> subdivided_points;
+    std::vector<double> cumulative_lengths;
+
+    double current_length = 0.0;
+    subdivided_points.push_back(polygon[start_vertex_idx]);
+    cumulative_lengths.push_back(current_length);
+
+    // 从起始顶点开始遍历多边形，对长边进行细分
+    for (size_t i = 0; i < polygon.size(); i++)
+    {
+        size_t vertex_idx = (start_vertex_idx + i) % polygon.size();
+        size_t next_vertex_idx = (start_vertex_idx + i + 1) % polygon.size();
+
+        const Point2LL& current_point = polygon[vertex_idx];
+        const Point2LL& next_point = polygon[next_vertex_idx];
+
+        // 计算当前边的长度
+        double edge_length = vSizeMM(next_point - current_point);
+
+        // 如果边长超过目标段长，进行细分
+        if (edge_length > target_segment_length)
+        {
+            // 计算需要细分的段数
+            int num_segments = static_cast<int>(std::ceil(edge_length / target_segment_length));
+
+            spdlog::debug("【螺旋过渡】边{}-{}长度={:.2f}mm，细分为{}段",
+                         vertex_idx, next_vertex_idx, edge_length, num_segments);
+
+            // 添加细分点
+            for (int seg = 1; seg < num_segments; seg++)
+            {
+                double ratio = static_cast<double>(seg) / num_segments;
+                Point2LL interpolated_point = current_point + (next_point - current_point) * ratio;
+
+                current_length += edge_length / num_segments;
+                subdivided_points.push_back(interpolated_point);
+                cumulative_lengths.push_back(current_length);
+            }
+
+            // 添加边的终点
+            current_length += edge_length / num_segments;
+        }
+        else
+        {
+            // 边长不超过目标段长，直接添加终点
+            current_length += edge_length;
+        }
+
+        // 添加原始顶点（除了最后一个点，因为它与起始点重合）
+        if (i < polygon.size() - 1)
+        {
+            subdivided_points.push_back(next_point);
+            cumulative_lengths.push_back(current_length);
+        }
+    }
+
+    spdlog::info("【螺旋过渡】细分完成：原始顶点{}个，细分后{}个点，总长度={:.2f}mm",
+                 polygon.size(), subdivided_points.size(), total_length);
+
+    // 移动到起始点
+    addTravel(polygon[start_vertex_idx]);
+
+    // 遍历细分后的点，生成挤出移动
+    for (size_t i = 1; i < subdivided_points.size(); i++)
+    {
+        const Point2LL& target_point = subdivided_points[i];
+        double length = cumulative_lengths[i];
+
+        // 计算进度比例 (0.0 到 1.0)
+        double progress = length / total_length;
+
+        // 获取螺旋起始流量和速度参数（百分比）
+        double spiralized_start_flow_rate = settings.get<double>("spiralized_start_flow_rate");
+        double spiralized_start_speed_rate = settings.get<double>("spiralized_start_speed_rate");
+
+        // 将百分比转换为比例（例如：30% -> 0.3）
+        double start_flow_ratio = spiralized_start_flow_rate / 100.0;
+        double start_speed_ratio = spiralized_start_speed_rate / 100.0;
+
+        // 线性增加的流量：从起始流量到100%
+        // 公式：flow_ratio = start_flow_ratio + (1.0 - start_flow_ratio) * progress
+        double flow_ratio = start_flow_ratio + (1.0 - start_flow_ratio) * progress;
+
+        // 线性增加的速度：从起始速度到100%
+        // 公式：speed_factor = start_speed_ratio + (1.0 - start_speed_ratio) * progress
+        double speed_factor = start_speed_ratio + (1.0 - start_speed_ratio) * progress;
+
+        // 线性增加的Z偏移：从0到layer_thickness_
+        coord_t z_offset = static_cast<coord_t>(layer_thickness_ * progress);
+
+        // 添加挤出移动，使用螺旋模式和计算出的流量
+        constexpr bool spiralize = true;
+        constexpr Ratio width_factor = 1.0_r;
+        constexpr double fan_speed = GCodePathConfig::FAN_SPEED_DEFAULT;
+        constexpr bool travel_to_z = false;
+
+        // 创建带Z偏移的3D点
+        Point3LL target_3d(target_point.X, target_point.Y, z_offset);
+
+        addExtrusionMove(
+            target_3d,
+            config,
+            SpaceFillType::Polygons,
+            Ratio(flow_ratio),
+            width_factor,
+            spiralize,
+             Ratio(speed_factor),
+            fan_speed,
+            travel_to_z);
+
+        // 调试信息（只在关键点输出）
+        if (i == 1 || i == subdivided_points.size() / 4 || i == subdivided_points.size() / 2 ||
+            i == subdivided_points.size() * 3 / 4 || i == subdivided_points.size() - 1)
+        {
+            spdlog::info("【螺旋过渡】点{}/{}, 进度={:.1f}%, 流量={:.3f}({:.1f}%->{:.1f}%), 速度={:.3f}({:.1f}%->{:.1f}%), Z偏移={:.3f}mm",
+                         i, subdivided_points.size(), progress * 100.0, flow_ratio,
+                         spiralized_start_flow_rate, 100.0, speed_factor,
+                         spiralized_start_speed_rate, 100.0, INT2MM(z_offset));
+        }
+    }
+
+    spdlog::info("【螺旋过渡】完成过渡墙打印，输出点数={}",
+                 subdivided_points.size());
+}
+
+void LayerPlan::addSpiralEndingWall(
+    const Shape& polygons,
+    const GCodePathConfig& config,
+    const Settings& settings,
+    size_t start_vertex_idx)
+{
+    if (polygons.empty())
+    {
+        return;
+    }
+
+    // 只处理第一个多边形（螺旋模式通常只有一个外墙）
+    const Polygon& polygon = polygons[0];
+    if (polygon.empty() || start_vertex_idx >= polygon.size())
+    {
+        return;
+    }
+
+    // 计算多边形的总长度
+    double total_length = 0.0;
+    for (size_t i = 0; i < polygon.size(); i++)
+    {
+        size_t next_i = (i + 1) % polygon.size();
+        total_length += vSizeMM(polygon[next_i] - polygon[i]);
+    }
+
+    if (total_length <= 0.0)
+    {
+        return;
+    }
+
+    // 计算切分参数（与过渡墙相同的逻辑）
+    const double perimeter_1_percent = total_length * 0.01; // 周长的1%
+    const double min_segment_length = 1.0; // 1mm的最小段长度
+    const double target_segment_length = std::max(perimeter_1_percent, min_segment_length);
+
+    spdlog::debug("【螺旋结束】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
+                 perimeter_1_percent, min_segment_length, target_segment_length);
+
+    // 生成细分后的点序列
+    std::vector<Point2LL> subdivided_points;
+    std::vector<double> cumulative_lengths;
+
+    double current_length = 0.0;
+    subdivided_points.push_back(polygon[start_vertex_idx]);
+    cumulative_lengths.push_back(current_length);
+
+    // 从起始顶点开始遍历多边形，对长边进行细分
+    for (size_t i = 0; i < polygon.size(); i++)
+    {
+        size_t vertex_idx = (start_vertex_idx + i) % polygon.size();
+        size_t next_vertex_idx = (start_vertex_idx + i + 1) % polygon.size();
+
+        const Point2LL& current_point = polygon[vertex_idx];
+        const Point2LL& next_point = polygon[next_vertex_idx];
+
+        // 计算当前边的长度
+        double edge_length = vSizeMM(next_point - current_point);
+
+        // 如果边长超过目标段长，进行细分
+        if (edge_length > target_segment_length)
+        {
+            // 计算需要细分的段数
+            int num_segments = static_cast<int>(std::ceil(edge_length / target_segment_length));
+
+            spdlog::debug("【螺旋结束】边{}-{}长度={:.2f}mm，细分为{}段",
+                         vertex_idx, next_vertex_idx, edge_length, num_segments);
+
+            // 添加细分点
+            for (int seg = 1; seg < num_segments; seg++)
+            {
+                double ratio = static_cast<double>(seg) / num_segments;
+                Point2LL interpolated_point = current_point + (next_point - current_point) * ratio;
+
+                current_length += edge_length / num_segments;
+                subdivided_points.push_back(interpolated_point);
+                cumulative_lengths.push_back(current_length);
+            }
+
+            // 添加边的终点
+            current_length += edge_length / num_segments;
+        }
+        else
+        {
+            // 边长不超过目标段长，直接添加终点
+            current_length += edge_length;
+        }
+
+        // 添加原始顶点（除了最后一个点，因为它与起始点重合）
+        if (i < polygon.size() - 1)
+        {
+            subdivided_points.push_back(next_point);
+            cumulative_lengths.push_back(current_length);
+        }
+    }
+
+    spdlog::info("【螺旋结束】细分完成：原始顶点{}个，细分后{}个点，总长度={:.2f}mm",
+                 polygon.size(), subdivided_points.size(), total_length);
+
+    // 遍历细分后的点，生成挤出移动（Z高度保持不变，流量线性减少）
+    for (size_t i = 1; i < subdivided_points.size(); i++)
+    {
+        const Point2LL& target_point = subdivided_points[i];
+        double length = cumulative_lengths[i];
+
+        // 计算进度比例 (0.0 到 1.0)
+        double progress = length / total_length;
+
+        // 线性减少的流量：从1到0
+        double flow_ratio = 1.0 - progress;
+
+        // Z偏移保持为0（保持当前层高度）
+        coord_t z_offset = 0;
+
+        // 添加挤出移动，使用螺旋模式和计算出的流量
+        constexpr bool spiralize = true;
+        constexpr Ratio width_factor = 1.0_r;
+        constexpr Ratio speed_factor = 1.0_r;
+        constexpr double fan_speed = GCodePathConfig::FAN_SPEED_DEFAULT;
+        constexpr bool travel_to_z = false;
+
+        // 创建3D点（Z高度不变）
+        Point3LL target_3d(target_point.X, target_point.Y, z_offset);
+
+        addExtrusionMove(
+            target_3d,
+            config,
+            SpaceFillType::Polygons,
+            Ratio(flow_ratio),
+            width_factor,
+            spiralize,
+            speed_factor,
+            fan_speed,
+            travel_to_z);
+
+        // 调试信息（只在关键点输出）
+        if (i == 1 || i == subdivided_points.size() / 4 || i == subdivided_points.size() / 2 ||
+            i == subdivided_points.size() * 3 / 4 || i == subdivided_points.size() - 1)
+        {
+            spdlog::debug("【螺旋结束】点{}/{}, 进度={:.1f}%, 流量={:.3f}, Z偏移={:.3f}mm",
+                         i, subdivided_points.size(), progress * 100.0, flow_ratio, INT2MM(z_offset));
+        }
+    }
+
+    spdlog::info("【螺旋结束】完成结束墙打印，输出点数={}",
+                 subdivided_points.size());
+}
+
 static constexpr double max_non_bridge_line_volume = MM2INT(100); // limit to accumulated "volume" of non-bridge lines which is proportional to distance x extrusion rate
 
 void LayerPlan::addWallLine(
@@ -2602,7 +2915,22 @@ void LayerPlan::spiralizeWallSlice(
     const bool is_top_layer,
     const bool is_bottom_layer)
 {
-    const bool smooth_contours = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_contours");
+    // 检查是否启用平滑螺旋Z坐标功能
+    const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
+
+    // smooth_spiralized_contours只在smooth_spiralized_z=true时才有效
+    const bool smooth_contours_setting = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_contours");
+    const bool smooth_contours = smooth_spiralized_z && smooth_contours_setting;
+
+    if (!smooth_spiralized_z && smooth_contours_setting)
+    {
+        spdlog::debug("【螺旋轮廓平滑】smooth_spiralized_z=false，强制禁用smooth_spiralized_contours");
+    }
+    else if (smooth_spiralized_z)
+    {
+        spdlog::debug("【螺旋轮廓平滑】smooth_spiralized_z=true，smooth_spiralized_contours={}", smooth_contours_setting ? "启用" : "禁用");
+    }
+
     constexpr bool spiralize = true; // In addExtrusionMove calls, enable spiralize and use nominal line width.
     constexpr Ratio width_factor = 1.0_r;
 
@@ -2610,7 +2938,8 @@ void LayerPlan::spiralizeWallSlice(
     const Point2LL origin = (last_seam_vertex_idx >= 0 && ! is_bottom_layer) ? last_wall[last_seam_vertex_idx] : wall[seam_vertex_idx];
     // NOTE: this used to use addTravel_simple() but if support is being generated then combed travel is required to avoid
     // the nozzle crossing the model on its return from printing the support.
-    addTravel(origin);
+    if (smooth_spiralized_z) addTravel(origin, false, -layer_thickness_);
+    else addTravel(origin);
 
     if (! smooth_contours && last_seam_vertex_idx >= 0)
     {
@@ -2690,7 +3019,28 @@ void LayerPlan::spiralizeWallSlice(
         wall_length += vSizeMM(p - p0);
         p0 = p;
 
-        const double flow = (is_bottom_layer) ? (min_bottom_layer_flow + ((1 - min_bottom_layer_flow) * wall_length / total_length)) : 1.0;
+        // 计算流量：根据是否启用平滑螺旋Z坐标功能来决定流量控制策略
+        double flow;
+        if (is_bottom_layer)
+        {
+            // 检查是否启用平滑螺旋Z坐标功能
+            const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
+
+            if (smooth_spiralized_z)
+            {
+                // 启用平滑Z时：流量从0线性增加到1.0（与新的过渡墙逻辑一致）
+                flow = wall_length / total_length;
+            }
+            else
+            {
+                // 禁用平滑Z时：使用原有的流量控制逻辑
+                flow = min_bottom_layer_flow + ((1 - min_bottom_layer_flow) * wall_length / total_length);
+            }
+        }
+        else
+        {
+            flow = 1.0;
+        }
 
         // if required, use interpolation to smooth the x/y coordinates between layers but not for the first spiralized layer
         // as that lies directly on top of a non-spiralized wall with exactly the same outline and not for the last point in each layer
@@ -2719,9 +3069,9 @@ void LayerPlan::spiralizeWallSlice(
         }
     }
 
-    if (is_top_layer)
+    if (is_top_layer && !smooth_spiralized_z)
     {
-        // add the tapering spiral
+        // 原有的tapering spiral逻辑（仅在未启用smooth_spiralized_z时使用）
         const double min_spiral_coast_dist = 10; // mm
         double distance_coasted = 0;
         wall_length = 0;
@@ -2753,6 +3103,13 @@ void LayerPlan::spiralizeWallSlice(
                 fan_speed,
                 travel_to_z);
         }
+
+        spdlog::debug("【原有螺旋结束】使用原有的tapering spiral逻辑，距离={:.2f}mm", distance_coasted);
+    }
+    else if (is_top_layer && smooth_spiralized_z)
+    {
+        // 启用smooth_spiralized_z时，不在这里处理最高层，而是在processSpiralizedWall中使用addSpiralEndingWall
+        spdlog::debug("【新螺旋结束】启用smooth_spiralized_z，跳过原有tapering spiral，使用新的addSpiralEndingWall");
     }
 }
 
@@ -3463,6 +3820,10 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                 p0 = gcode.getPositionXY();
                 const auto writeSpiralPath = [&](const GCodePath& spiral_path, const bool end_layer) -> void
                 {
+                    // 为每个螺旋路径重新计算速度，确保使用该路径自己的speed_factor
+                    double spiral_speed = spiral_path.config.getSpeed();
+                    spiral_speed *= spiral_path.speed_factor;
+
                     for (const auto& p1 : spiral_path.points)
                     {
                         const Point2LL p1_2d = p1.toPoint2LL();
@@ -3475,17 +3836,19 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                         coord_t z_offset;
                         if (smooth_spiralized_z)
                         {
-                            // 启用平滑Z：按照路径进展比例线性增加Z坐标
+                            // 启用平滑Z：从前一层结束的高度线性增加到本层的理论高度
+                            // 修正：从0（前一层结束高度）线性增加到layer_thickness_（本层理论高度）
                             z_offset = end_layer ? layer_thickness_ / 2 : std::round(layer_thickness_ * length / totalLength);
-
+                            //if (path.travel_to_z) z_offset = p1.z_;
                             // 只在第一个点时输出日志，避免过多日志
                             static bool first_smooth_z_log = true;
                             if (first_smooth_z_log)
                             {
-                                spdlog::info("【平滑螺旋Z】启用平滑Z坐标上升，Z偏移={:.3f}mm，进度={:.1f}%",
+                                spdlog::info("【平滑螺旋Z】启用平滑Z坐标上升，从前一层高度线性增加到本层高度，Z偏移={:.3f}mm，进度={:.1f}%",
                                            INT2MM(z_offset), (length / totalLength) * 100.0);
                                 first_smooth_z_log = false;
                             }
+                            z_offset -= layer_thickness_;
                         }
                         else
                         {
@@ -3500,7 +3863,7 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                                 first_no_smooth_z_log = false;
                             }
                         }
-                        const double extrude_speed = speed * spiral_path.speed_back_pressure_factor;
+                        const double extrude_speed = spiral_speed * spiral_path.speed_back_pressure_factor;
                         writeExtrusionRelativeZ(
                             gcode,
                             p1,
@@ -3797,6 +4160,604 @@ bool LayerPlan::getIsInsideMesh() const
 bool LayerPlan::getSkirtBrimIsPlanned(unsigned int extruder_nr) const
 {
     return skirt_brim_is_processed_[extruder_nr];
+}
+
+void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_start_point)
+{
+    // 只对非螺旋模式的层进行优化
+    const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+    Point2LL original_start_point;
+
+    // 检查是否为螺旋模式
+    bool is_spiralize_mode = false;
+    if (mesh_group_settings.get<bool>("magic_spiralize"))
+    {
+        // 需要找到当前层对应的mesh来获取正确的initial_bottom_layers
+        // 由于LayerPlan没有直接的mesh引用，我们需要通过storage来查找
+        std::shared_ptr<const SliceMeshStorage> first_mesh = findFirstPrintedMesh();
+        if (first_mesh)
+        {
+            const size_t initial_bottom_layers = first_mesh->settings.get<size_t>("initial_bottom_layers");
+            is_spiralize_mode = layer_nr_ >= LayerIndex(initial_bottom_layers);
+        }
+        else
+        {
+            // 如果找不到mesh，使用mesh_group_settings作为fallback（虽然可能不准确）
+            const size_t initial_bottom_layers = mesh_group_settings.get<size_t>("initial_bottom_layers");
+            is_spiralize_mode = layer_nr_ >= LayerIndex(initial_bottom_layers);
+        }
+    }
+
+    if (is_spiralize_mode)
+    {
+        spdlog::debug("【层间优化】第{}层为螺旋模式，跳过层间路径优化", layer_nr_);
+        return;
+    }
+
+    if (extruder_plans_.empty())
+    {
+        spdlog::debug("【层间优化】第{}层无挤出机计划，跳过层间路径优化", layer_nr_);
+        return;
+    }
+
+    // 获取最后一个挤出机计划
+    ExtruderPlan& last_extruder_plan = extruder_plans_.back();
+    if (last_extruder_plan.paths_.empty())
+    {
+        spdlog::debug("【层间优化】第{}层最后挤出机计划无路径，跳过层间路径优化", layer_nr_);
+        return;
+    }
+
+    // 创建临时ExtruderPlan存储最后一组相同类型的挤出路径
+    std::vector<GCodePath> temp_extrusion_paths;
+    PrintFeatureType last_type = PrintFeatureType::NoneType;
+    std::vector<size_t> paths_to_remove; // 记录需要从原ExtruderPlan中删除的路径索引
+    coord_t layer_z = last_extruder_plan.paths_[0].points[0].z_;
+    // 从后往前遍历，找到最后一组相同类型的挤出路径
+    for (int i = static_cast<int>(last_extruder_plan.paths_.size()) - 1; i >= 0; i--)
+    {
+        GCodePath& path = last_extruder_plan.paths_[i];
+
+        if (path.isTravelPath())
+        {
+            // 录入所有的空移路径
+            temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
+            paths_to_remove.insert(paths_to_remove.begin(), i);
+            continue;
+        }
+
+        // 第一次遇到挤出路径，记录类型
+        if (last_type == PrintFeatureType::NoneType)
+        {
+            last_type = path.config.getPrintFeatureType();
+            temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
+            paths_to_remove.insert(paths_to_remove.begin(), i);
+        }
+        // 如果是相同类型的挤出路径，继续添加
+        else if (path.config.getPrintFeatureType() == PrintFeatureType::Skin || path.config.getPrintFeatureType() == PrintFeatureType::Infill)
+        {
+            temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
+            paths_to_remove.insert(paths_to_remove.begin(), i);
+        }
+        // 遇到不同类型的挤出路径，停止（找到了完整的最后一组）
+        else
+        {
+            //将前序的一组空移也收录进来，可以的到挤出线的起点
+            if (path.isTravelPath())
+            {
+                temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
+                paths_to_remove.insert(paths_to_remove.begin(), i);
+            }
+            break;
+        }
+
+    }
+
+    if (temp_extrusion_paths.empty())
+    {
+        spdlog::debug("【层间优化】第{}层未找到挤出路径，跳过层间路径优化", layer_nr_);
+        return;
+    }
+
+    // 从原ExtruderPlan中删除这些路径（从后往前删除，避免索引变化）
+    for (int i = static_cast<int>(paths_to_remove.size()) - 1; i >= 0; i--)
+    {
+        last_extruder_plan.paths_.erase(last_extruder_plan.paths_.begin() + paths_to_remove[i]);
+    }
+
+    // 现在将相关的path全部从last_extruder_plan.paths_移动到了temp_extrusion_paths
+
+    // === 步骤1：在临时ExtruderPlan中找最优点 ===
+    // 遍历所有非travel的path，计算每条线段到目标点的垂直距离
+    coord_t min_distance_squared = std::numeric_limits<coord_t>::max();
+    size_t best_path_idx = 0;
+    size_t best_segment_idx = 0;
+    Point2LL optimal_point;
+    bool split_needed = false;
+
+    Point2LL current_pos; // 当前位置（上一个path的终点）
+    bool has_current_pos = false;
+
+    for (size_t path_idx = 0; path_idx < temp_extrusion_paths.size(); path_idx++)
+    {
+        const GCodePath& path = temp_extrusion_paths[path_idx];
+
+        if (path.isTravelPath())
+        {
+            // travel路径更新当前位置
+            if (!path.points.empty())
+            {
+                current_pos = path.points.back().toPoint2LL();
+                has_current_pos = true;
+            }
+            continue;
+        }
+
+        if (path.points.empty()) continue;
+
+        // 确定这个path的起点
+        Point2LL path_start;
+        if (has_current_pos)
+        {
+            path_start = current_pos;
+        }
+        else
+        {
+            path_start = path.points[0].toPoint2LL();
+        }
+
+        // 遍历这个path的所有线段
+        Point2LL prev_point = path_start;
+        for (size_t point_idx = 0; point_idx < path.points.size(); point_idx++)
+        {
+            Point2LL curr_point = path.points[point_idx].toPoint2LL();
+
+            // 计算线段到目标点的垂直距离
+            Point2LL segment_vec = curr_point - prev_point;
+            Point2LL target_vec = next_layer_start_point - prev_point;
+
+            coord_t segment_length_squared = vSize2(segment_vec);
+
+            // 计算投影参数t
+            coord_t dot_product = dot(target_vec, segment_vec);
+            double t = static_cast<double>(dot_product) / static_cast<double>(segment_length_squared);
+
+            Point2LL closest_point;
+            bool is_on_segment = false;
+
+            if (t <= 0.0)
+            {
+                // 垂足在线段外，选择起点
+                closest_point = prev_point;
+            }
+            else if (t >= 1.0)
+            {
+                // 垂足在线段外，选择终点
+                closest_point = curr_point;
+            }
+            else
+            {
+                // 垂足在线段上
+                closest_point = prev_point + Point2LL(static_cast<coord_t>(t * segment_vec.X),
+                                                      static_cast<coord_t>(t * segment_vec.Y));
+                is_on_segment = true;
+            }
+
+            coord_t distance_squared = vSize2(closest_point - next_layer_start_point);
+            if (distance_squared < min_distance_squared)
+            {
+                min_distance_squared = distance_squared;
+
+                // 特殊处理：如果最优点在path的起点（第一个线段的起点），
+                // 那么它实际上属于上一个path的终点
+                if (t <= 0.0 && point_idx == 0 && path_idx > 0)
+                {
+                    // 找到上一个path
+                    size_t prev_path_idx = path_idx - 1;
+                    while (prev_path_idx > 0 && temp_extrusion_paths[prev_path_idx].points.empty())
+                    {
+                        prev_path_idx--;
+                    }
+                    // 最优点归属于上一个path的终点
+                    best_path_idx = prev_path_idx;
+                    best_segment_idx = temp_extrusion_paths[prev_path_idx].points.size() - 1;
+                    optimal_point = closest_point;
+                    split_needed = false; // 在终点，不需要拆分
+                }
+                else
+                {
+                    // 正常情况
+                    best_path_idx = path_idx;
+                    best_segment_idx = point_idx;
+                    optimal_point = closest_point;
+                    split_needed = is_on_segment;
+                }
+            }
+            prev_point = curr_point;
+        }
+
+        // 更新当前位置为这个path的终点
+        current_pos = path.points.back().toPoint2LL();
+        has_current_pos = true;
+    }
+
+    spdlog::debug("【层间优化】找到最优点: ({:.2f}, {:.2f}), 距离={:.2f}mm, 路径索引={}, 需要拆分={}",
+                 INT2MM(optimal_point.X), INT2MM(optimal_point.Y), INT2MM(std::sqrt(min_distance_squared)),
+                 best_path_idx, split_needed);
+
+    // === 步骤2：根据最优点拆分temp_extrusion_paths ===
+    std::vector<GCodePath> paths1; // 原起点到最优点
+    std::vector<GCodePath> paths2; // 最优点到原终点
+
+    // 如果需要拆分，先处理拆分
+    if (split_needed)
+    {
+        // 拆分最优路径
+        GCodePath& best_path = temp_extrusion_paths[best_path_idx];
+
+        // 创建第一部分路径（到最优点）
+        GCodePath path1 = best_path;
+        path1.points.clear();
+
+        // 确定起点
+        Point2LL path_start;
+        if (best_path_idx > 0)
+        {
+            // 找到前一个非travel路径的终点
+            for (int i = static_cast<int>(best_path_idx) - 1; i >= 0; i--)
+            {
+                if (!temp_extrusion_paths[i].isTravelPath() && !temp_extrusion_paths[i].points.empty())
+                {
+                    path_start = temp_extrusion_paths[i].points.back().toPoint2LL();
+                    break;
+                }
+            }
+        }
+        else
+        {
+            path_start = best_path.points[0].toPoint2LL();
+        }
+
+        // 添加到最优点的所有点
+        Point2LL prev_point = path_start;
+        for (size_t i = 0; i <= best_segment_idx; i++)
+        {
+            if (i == best_segment_idx)
+            {
+                // 最后一段，添加最优点
+                path1.points.emplace_back(Point3LL(optimal_point.X, optimal_point.Y, layer_z));
+            }
+            else
+            {
+                path1.points.push_back(best_path.points[i]);
+            }
+        }
+
+        // 创建第二部分路径（从最优点开始）
+        GCodePath path2 = best_path;
+        path2.points.clear();
+        path2.points.emplace_back(Point3LL(optimal_point.X, optimal_point.Y, layer_z));
+        for (size_t i = best_segment_idx; i < best_path.points.size(); i++)
+        {
+            path2.points.push_back(best_path.points[i]);
+        }
+
+        // 重新构建temp_extrusion_paths
+        std::vector<GCodePath> new_temp_paths;
+        for (size_t i = 0; i < best_path_idx; i++)
+        {
+            new_temp_paths.push_back(temp_extrusion_paths[i]);
+        }
+        new_temp_paths.push_back(path1);
+        new_temp_paths.push_back(path2);
+        for (size_t i = best_path_idx + 1; i < temp_extrusion_paths.size(); i++)
+        {
+            new_temp_paths.push_back(temp_extrusion_paths[i]);
+        }
+        temp_extrusion_paths = std::move(new_temp_paths);
+
+        // 更新最优路径索引（现在指向path1）
+        best_path_idx = best_path_idx; // path1的索引
+    }
+
+    // 分割路径为两部分
+    for (size_t i = 0; i <= best_path_idx; i++)
+    {
+        paths1.push_back(temp_extrusion_paths[i]);
+    }
+    for (size_t i = best_path_idx + 1; i < temp_extrusion_paths.size(); i++)
+    {
+        paths2.push_back(temp_extrusion_paths[i]);
+    }
+
+    // === 步骤3：构建两种方法的路径 ===
+
+    // 方法1：最优点-原起点-原终点-最优点（需要反向和点平移）
+    std::vector<GCodePath> method1_paths;
+
+    // 反向paths1并添加到method1
+    for (int i = static_cast<int>(paths1.size()) - 1; i >= 0; i--)
+    {
+        GCodePath reversed_path1 = paths1[i];
+        if (!reversed_path1.points.empty())
+        {
+            // 反向点序列
+            std::reverse(reversed_path1.points.begin(), reversed_path1.points.end());
+        }
+        method1_paths.push_back(reversed_path1);
+    }
+
+    // 添加travel到temp_extrusion_paths原终点
+    if (!temp_extrusion_paths.empty() && !temp_extrusion_paths[temp_extrusion_paths.size()-1].points.empty())
+    {
+        Point2LL original_end = temp_extrusion_paths[temp_extrusion_paths.size()-1].points[0].toPoint2LL();
+        GCodePath travel_to_end;
+        travel_to_end.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+        travel_to_end.mesh = nullptr;
+        travel_to_end.space_fill_type = SpaceFillType::None;
+        travel_to_end.speed_factor = 1.0_r;
+        travel_to_end.speed_back_pressure_factor = 1.0_r;
+        travel_to_end.retract = false;
+        travel_to_end.unretract_before_last_travel_move = false;
+        travel_to_end.perform_z_hop = false;
+        travel_to_end.points.emplace_back(Point3LL(original_end.X, original_end.Y, layer_z));
+        method1_paths.push_back(travel_to_end);
+    }
+    // 添加travel到temp_extrusion_paths原终点
+    if (!temp_extrusion_paths.empty() && !temp_extrusion_paths[temp_extrusion_paths.size()-1].points.empty())
+    {
+        Point2LL original_end = temp_extrusion_paths[temp_extrusion_paths.size()-1].points[0].toPoint2LL();
+        GCodePath travel_to_end;
+        travel_to_end.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+        travel_to_end.mesh = nullptr;
+        travel_to_end.space_fill_type = SpaceFillType::None;
+        travel_to_end.speed_factor = 1.0_r;
+        travel_to_end.speed_back_pressure_factor = 1.0_r;
+        travel_to_end.retract = false;
+        travel_to_end.unretract_before_last_travel_move = false;
+        travel_to_end.perform_z_hop = false;
+        travel_to_end.points.emplace_back(Point3LL(original_end.X, original_end.Y, layer_z));
+        method1_paths.push_back(travel_to_end);
+    }
+
+    // 反向paths2并添加到method1
+    for (int i = static_cast<int>(paths2.size()) - 1; i >= 0; i--)
+    {
+        GCodePath reversed_path2 = paths2[i];
+        if (!reversed_path2.points.empty())
+        {
+            // 反向点序列
+            std::reverse(reversed_path2.points.begin(), reversed_path2.points.end());
+        }
+        method1_paths.push_back(reversed_path2);
+    }
+
+    // 对method1进行点的循环平移
+    if (!method1_paths.empty())
+    {
+        // 收集所有点
+        std::vector<Point3LL> all_points;
+        for (const auto& path : method1_paths)
+        {
+            for (const auto& point : path.points)
+            {
+                all_points.push_back(point);
+            }
+        }
+
+        if (!all_points.empty())
+        {
+            // 重新分配点到路径
+            size_t point_idx = 0;
+            for (auto& path : method1_paths)
+            {
+                for (auto& point : path.points)
+                {
+                    if (point_idx < all_points.size()-1)
+                    {
+                        point = all_points[++point_idx];
+                    }else if (point_idx == all_points.size()-1)
+                    {
+                        point = all_points[0];
+                    }
+                }
+            }
+        }
+    }
+
+    // 方法2：最优点-原终点-原起点-最优点
+    std::vector<GCodePath> method2_paths;
+
+    // 添加paths2到method2
+    for (const auto& path : paths2)
+    {
+        method2_paths.push_back(path);
+    }
+
+    // 添加travel到原起点
+    if (!temp_extrusion_paths.empty() && !temp_extrusion_paths[0].points.empty())
+    {
+        Point2LL original_start = temp_extrusion_paths[0].points[0].toPoint2LL();
+        GCodePath travel_to_start2;
+        travel_to_start2.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+        travel_to_start2.mesh = nullptr;
+        travel_to_start2.space_fill_type = SpaceFillType::None;
+        travel_to_start2.speed_factor = 1.0_r;
+        travel_to_start2.speed_back_pressure_factor = 1.0_r;
+        travel_to_start2.retract = false;
+        travel_to_start2.unretract_before_last_travel_move = false;
+        travel_to_start2.perform_z_hop = false;
+        travel_to_start2.points.emplace_back(Point3LL(original_start.X, original_start.Y, layer_z));
+        method2_paths.push_back(travel_to_start2);
+    }
+
+    // 添加paths1到method2
+    for (const auto& path : paths1)
+    {
+        method2_paths.push_back(path);
+    }
+
+    // 添加travel回到最优点
+    GCodePath travel_to_optimal2;
+    travel_to_optimal2.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+    travel_to_optimal2.mesh = nullptr;
+    travel_to_optimal2.space_fill_type = SpaceFillType::None;
+    travel_to_optimal2.speed_factor = 1.0_r;
+    travel_to_optimal2.speed_back_pressure_factor = 1.0_r;
+    travel_to_optimal2.retract = false;
+    travel_to_optimal2.unretract_before_last_travel_move = false;
+    travel_to_optimal2.perform_z_hop = false;
+    travel_to_optimal2.points.emplace_back(Point3LL(optimal_point.X, optimal_point.Y, layer_z));
+    method2_paths.push_back(travel_to_optimal2);
+
+    // 在method1_paths末尾添加到下一层起始点的travel
+    GCodePath travel_to_next_layer1;
+    travel_to_next_layer1.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+    travel_to_next_layer1.mesh = nullptr;
+    travel_to_next_layer1.space_fill_type = SpaceFillType::None;
+    travel_to_next_layer1.speed_factor = 1.0_r;
+    travel_to_next_layer1.speed_back_pressure_factor = 1.0_r;
+    travel_to_next_layer1.retract = false;
+    travel_to_next_layer1.unretract_before_last_travel_move = false;
+    travel_to_next_layer1.perform_z_hop = false;
+    travel_to_next_layer1.points.emplace_back(Point3LL(next_layer_start_point.X, next_layer_start_point.Y, layer_z));
+    method1_paths.push_back(travel_to_next_layer1);
+
+    // 在method2_paths末尾添加到下一层起始点的travel
+    GCodePath travel_to_next_layer2;
+    travel_to_next_layer2.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+    travel_to_next_layer2.mesh = nullptr;
+    travel_to_next_layer2.space_fill_type = SpaceFillType::None;
+    travel_to_next_layer2.speed_factor = 1.0_r;
+    travel_to_next_layer2.speed_back_pressure_factor = 1.0_r;
+    travel_to_next_layer2.retract = false;
+    travel_to_next_layer2.unretract_before_last_travel_move = false;
+    travel_to_next_layer2.perform_z_hop = false;
+    travel_to_next_layer2.points.emplace_back(Point3LL(next_layer_start_point.X, next_layer_start_point.Y, layer_z));
+    method2_paths.push_back(travel_to_next_layer2);
+
+    // === 步骤4：评分算法 ===
+    auto calculateScore = [](const std::vector<GCodePath>& paths) -> double
+    {
+        if (paths.empty()) return 0.0;
+
+        double score = 0.0;
+        double coefficient = 1.0;
+        Point2LL previous_end_point; // 上一个路径的终点
+        bool previous_is_extrusion = false;
+        bool has_previous_type = false;
+
+        // 从最后一个路径开始逆向计算
+        for (int path_idx = static_cast<int>(paths.size()) - 1; path_idx >= 0; path_idx--)
+        {
+            const auto& path = paths[path_idx];
+            bool is_extrusion = !path.isTravelPath();
+            coord_t path_length = 0;
+
+            // 计算路径长度
+            if (!path.points.empty() )
+            {
+                Point2LL path_start = path.points[0].toPoint2LL();
+
+                // 如果有下一个路径的起点，计算从当前路径终点到下一个路径起点的距离
+                if (path_idx > 0)
+                {
+                    const auto& last_path = paths[path_idx-1];
+                    if (!last_path.points.empty() )
+                    {
+                        previous_end_point = last_path.points.back().toPoint2LL();
+                        path_length += vSize(previous_end_point - path_start);
+                    }
+                }
+
+                // 计算路径内部各点之间的距离
+                for (size_t i = 1; i < path.points.size(); i++)
+                {
+                    path_length += vSize(path.points[i].toPoint2LL() - path.points[i-1].toPoint2LL());
+                }
+            }
+
+            // 检查是否需要切换系数（路径类型改变）
+            if (has_previous_type && previous_is_extrusion != is_extrusion)
+            {
+                coefficient /= 2.0; // 每次切换路径类型，系数除以2
+            }
+
+            // 计算得分
+            if (is_extrusion)
+            {
+                score += coefficient * INT2MM(path_length); // 挤出路径加分
+            }
+            else
+            {
+                score -= coefficient * INT2MM(path_length); // travel路径减分
+            }
+
+            // 更新状态
+            previous_is_extrusion = is_extrusion;
+            has_previous_type = true;
+        }
+
+        return score;
+    };
+
+    double score1 = calculateScore(method1_paths);
+    double score2 = calculateScore(method2_paths);
+
+    spdlog::debug("【层间优化】方法1得分: {:.3f}, 方法2得分: {:.3f}", score1, score2);
+
+    // === 步骤5：选择最优方法并导入到last_extruder_plan ===
+    std::vector<GCodePath>& chosen_paths = (score1 > score2) ? method1_paths : method2_paths;
+    std::string chosen_method = (score1 > score2) ? "方法1" : "方法2";
+
+    spdlog::debug("【层间优化】选择{}, 开始导入路径", chosen_method);
+
+    // 添加travel到新路径的起点
+    if (!chosen_paths.empty() && !chosen_paths[0].points.empty())
+    {
+        Point2LL new_start = chosen_paths[0].points[0].toPoint2LL();
+
+        // 获取当前位置（last_extruder_plan的最后一个点）
+        Point2LL current_pos;
+        if (!last_extruder_plan.paths_.empty())
+        {
+            const auto& last_path = last_extruder_plan.paths_.back();
+            if (!last_path.points.empty())
+            {
+                current_pos = last_path.points.back().toPoint2LL();
+            }
+        }
+
+        // 只有当起点不同时才添加travel
+        if (vSize2(new_start - current_pos) > 100) // 0.1mm的容差
+        {
+            GCodePath initial_travel;
+            initial_travel.config = configs_storage_.travel_config_per_extruder[getExtruder()];
+            initial_travel.mesh = nullptr;
+            initial_travel.space_fill_type = SpaceFillType::None;
+            initial_travel.speed_factor = 1.0_r;
+            initial_travel.speed_back_pressure_factor = 1.0_r;
+            initial_travel.retract = false;
+            initial_travel.unretract_before_last_travel_move = false;
+            initial_travel.perform_z_hop = false;
+            initial_travel.points.emplace_back(Point3LL(new_start.X, new_start.Y, layer_z));
+            last_extruder_plan.paths_.push_back(initial_travel);
+        }
+    }
+
+    // 逐一添加chosen_paths到last_extruder_plan
+    for (const auto& path : chosen_paths)
+    {
+        last_extruder_plan.paths_.push_back(path);
+    }
+
+    // 更新last_planned_position_为新路径的终点（最优点）
+    last_planned_position_ = optimal_point;
+
+    spdlog::debug("【层间优化】第{}层路径优化完成，添加了{}条路径，最终结束点: ({:.2f}, {:.2f})",
+                 layer_nr_, chosen_paths.size(), INT2MM(optimal_point.X), INT2MM(optimal_point.Y));
+    spdlog::debug("【层间优化】更新last_planned_position_为: ({:.2f}, {:.2f})",
+                 INT2MM(last_planned_position_->X), INT2MM(last_planned_position_->Y));
 }
 
 void LayerPlan::setSkirtBrimIsPlanned(unsigned int extruder_nr)

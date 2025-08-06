@@ -32,7 +32,8 @@ public:
         const coord_t wall_0_inset,
         const Settings& settings,
         const int layer_idx,
-        SectionType section_type);
+        SectionType section_type,
+        const coord_t layer_z = -1);
 
     /*!
      * A class that creates the toolpaths given an outline, nominal bead width and maximum amount of walls
@@ -51,7 +52,8 @@ public:
         const coord_t wall_0_inset,
         const Settings& settings,
         const int layer_idx,
-        SectionType section_type);
+        SectionType section_type,
+        const coord_t layer_z = -1);
 
     /*!
      * Generates the Toolpaths
@@ -154,6 +156,7 @@ private:
     Shape inner_contour_; //<! The inner contour of the generated toolpaths
     const Settings& settings_;
     int layer_idx_;
+    coord_t layer_z_;  //<! The actual Z coordinate of this layer (for variable layer heights)
     SectionType section_type_;
 };
 } // namespace cura

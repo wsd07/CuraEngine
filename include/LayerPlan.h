@@ -297,6 +297,14 @@ public:
     void setSkirtBrimIsPlanned(unsigned int extruder_nr);
 
     /*!
+     * 优化当前层的路径顺序，使最后一条挤出线的终点尽可能接近下一层的起始点
+     * 这样可以减少层间空移距离，减少喷嘴移动过程中的漏料
+     *
+     * \param next_layer_start_point 下一层的起始点坐标
+     */
+    void optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_start_point);
+
+    /*!
      * Get the destination state of the first travel move.
      * This consists of the location and whether the destination was inside the model, or e.g. to support
      *
@@ -524,6 +532,39 @@ public:
         const std::optional<Point2LL> start_near_location = std::optional<Point2LL>(),
         bool scarf_seam = false,
         bool smooth_acceleration = false);
+
+    /*!
+     * Add a spiral transition wall for smooth Z mode.
+     * This creates a single wall that transitions from the previous layer height to the current layer height
+     * with linearly increasing extrusion flow from 0 to the target value.
+     * \param polygons The wall polygons to print
+     * \param config The path configuration
+     * \param settings The print settings
+     * \param start_vertex_idx The starting vertex index for the spiral
+     */
+    void addSpiralTransitionWall(
+        const Shape& polygons,
+        const GCodePathConfig& config,
+        const Settings& settings,
+        size_t start_vertex_idx);
+
+    /*!
+     * \brief Add a spiral ending wall for the top layer
+     *
+     * This function adds a final spiral wall that maintains the same Z height
+     * while gradually reducing the extrusion flow from 1.0 to 0.0 over one complete rotation.
+     * This creates a smooth ending for spiral mode printing.
+     *
+     * \param polygons The wall polygons to print
+     * \param config The path configuration
+     * \param settings The print settings
+     * \param start_vertex_idx The starting vertex index for the spiral
+     */
+    void addSpiralEndingWall(
+        const Shape& polygons,
+        const GCodePathConfig& config,
+        const Settings& settings,
+        size_t start_vertex_idx);
 
     /*!
      * Add a single line that is part of a wall to the gcode.

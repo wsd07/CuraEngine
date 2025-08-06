@@ -214,22 +214,38 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
 {
     const SliceLayer& layer = mesh.layers[layer_nr];
 
-    // === 螺旋模式自定义Z接缝点：计算当前层净Z坐标 ===
-    // 与普通模式相同，计算不包括raft的模型净高度
+    // === 螺旋模式自定义Z接缝点：使用正确的层Z坐标 ===
+    // 使用mesh.layers[layer_nr].printZ获取正确的Z坐标（支持可变层厚）
     coord_t layer_z = 0;
-    if (layer_nr >= 0)
+    if (layer_nr >= 0 && layer_nr < static_cast<LayerIndex>(mesh.layers.size()))
     {
-        const coord_t layer_height = mesh.settings.get<coord_t>("layer_height");           // 普通层厚度
-        const coord_t initial_layer_thickness = mesh.settings.get<coord_t>("layer_height_0"); // 第一层厚度
+        layer_z = mesh.layers[layer_nr].printZ;
+        spdlog::debug("螺旋模式接缝点：第{}层，使用正确的printZ={:.2f}mm（支持可变层厚）",
+                     layer_nr, INT2MM(layer_z));
+    }
 
-        if (layer_nr == 0)
-        {
-            layer_z = initial_layer_thickness;  // 第一层
-        }
-        else
-        {
-            layer_z = initial_layer_thickness + (layer_nr - 1) * layer_height;  // 累积高度
-        }
+    // === 计算模型Z坐标（去除raft影响）===
+    // 手绘Z接缝点是在原始模型上定义的，需要将切片Z坐标转换为模型Z坐标
+    coord_t model_z = layer_z;
+    const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+    if (mesh_group_settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::RAFT)
+    {
+        // 获取raft总厚度
+        coord_t raft_total_thickness = Raft::getTotalThickness();
+
+        // 获取raft间隙
+        const ExtruderTrain& raft_surface_train = mesh_group_settings.get<ExtruderTrain&>("raft_surface_extruder_nr");
+        coord_t raft_airgap = raft_surface_train.settings_.get<coord_t>("raft_airgap");
+
+        // 计算模型实体高度
+        model_z = layer_z - raft_total_thickness - raft_airgap;
+
+        spdlog::debug("Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型Z={:.2f}mm",
+                     INT2MM(layer_z), INT2MM(raft_total_thickness), INT2MM(raft_airgap), INT2MM(model_z));
+    }
+    else
+    {
+        spdlog::debug("无Raft结构，模型Z={:.2f}mm（等于层Z）", INT2MM(model_z));
     }
 
     // === 螺旋模式自定义Z接缝点处理 ===
@@ -240,7 +256,7 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
         if (!z_seam_points.empty())
         {
             spdlog::info("=== 螺旋模式自定义Z接缝点处理 ===");
-            spdlog::info("层号={}, Z={:.2f}mm", layer_nr, INT2MM(layer_z));
+            spdlog::info("层号={}, 层Z={:.2f}mm, 模型Z={:.2f}mm", layer_nr, INT2MM(layer_z), INT2MM(model_z));
 
             // 按Z坐标排序
             std::vector<Point3LL> sorted_points = z_seam_points;
@@ -255,15 +271,15 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
             Point2LL target_seam_pos;
             bool use_custom_seam = false;
 
-            if (layer_z < min_z)
+            if (model_z < min_z)
             {
                 // 低于最低点：使用最低点的XY坐标
                 target_seam_pos = Point2LL(sorted_points.front().x_, sorted_points.front().y_);
                 use_custom_seam = true;
-                spdlog::info("层Z低于最低点，使用最低点: ({:.2f}, {:.2f})",
+                spdlog::info("模型Z低于最低点，使用最低点: ({:.2f}, {:.2f})",
                            INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
             }
-            else if (layer_z > max_z)
+            else if (model_z > max_z)
             {
                 // 高于最高点：根据draw_z_seam_grow决定
                 bool draw_z_seam_grow = mesh.settings.get<bool>("draw_z_seam_grow");
@@ -272,20 +288,20 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
                     // grow=true：使用最高点的XY坐标
                     target_seam_pos = Point2LL(sorted_points.back().x_, sorted_points.back().y_);
                     use_custom_seam = true;
-                    spdlog::info("层Z高于最高点，grow=true，使用最高点: ({:.2f}, {:.2f})",
+                    spdlog::info("模型Z高于最高点，grow=true，使用最高点: ({:.2f}, {:.2f})",
                                INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
                 }
                 else
                 {
                     // grow=false：使用常规螺旋连续性逻辑
                     use_custom_seam = false;
-                    spdlog::info("层Z高于最高点，grow=false，使用常规螺旋逻辑");
+                    spdlog::info("模型Z高于最高点，grow=false，使用常规螺旋逻辑");
                 }
             }
             else
             {
                 // 在范围内：进行插值计算
-                // 创建ZSeamConfig进行插值
+                // 创建ZSeamConfig进行插值，使用模型Z坐标（去除raft影响）
                 ZSeamConfig z_seam_config(
                     mesh.settings.get<EZSeamType>("z_seam_type"),
                     mesh.getZSeamHint(),
@@ -295,20 +311,20 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
                     z_seam_points,
                     mesh.settings.get<bool>("z_seam_point_interpolation"),
                     mesh.settings.get<bool>("draw_z_seam_grow"),
-                    layer_z);
+                    model_z);
 
                 auto interpolated_pos = z_seam_config.getInterpolatedSeamPosition();
                 if (interpolated_pos.has_value())
                 {
                     target_seam_pos = interpolated_pos.value();
                     use_custom_seam = true;
-                    spdlog::info("层Z在范围内，插值成功: ({:.2f}, {:.2f})",
+                    spdlog::info("模型Z在范围内，插值成功: ({:.2f}, {:.2f})",
                                INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
                 }
                 else
                 {
                     use_custom_seam = false;
-                    spdlog::info("层Z在范围内，但插值失败，使用常规逻辑");
+                    spdlog::info("模型Z在范围内，但插值失败，使用常规逻辑");
                 }
             }
 
@@ -3088,10 +3104,22 @@ void FffGcodeWriter::processSpiralizedWall(
     const bool is_bottom_layer = (layer_nr == mesh.settings.get<LayerIndex>("initial_bottom_layers"));
     const bool is_top_layer = ((size_t)layer_nr == (storage.spiralize_wall_outlines.size() - 1) || storage.spiralize_wall_outlines[layer_nr + 1] == nullptr);
     const int seam_vertex_idx = storage.spiralize_seam_vertex_indices[layer_nr]; // use pre-computed seam vertex index for current layer
+
     // output a wall slice that is interpolated between the last and current walls
     for (const Polygon& wall_outline : part.spiral_wall)
     {
         gcode_layer.spiralizeWallSlice(mesh_config.inset0_config, wall_outline, *last_wall_outline, seam_vertex_idx, last_seam_vertex_idx, is_top_layer, is_bottom_layer);
+    }
+
+    // 如果是最高层，添加螺旋结束墙（保持Z高度不变，流量线性减少到0）
+    if (is_top_layer)
+    {
+        const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
+        if (smooth_spiralized_z)
+        {
+            spdlog::info("【螺旋结束】第{}层是最高层，添加螺旋结束墙", layer_nr);
+            gcode_layer.addSpiralEndingWall(part.spiral_wall, mesh_config.inset0_config, mesh.settings, seam_vertex_idx);
+        }
     }
 }
 
@@ -3120,33 +3148,37 @@ bool FffGcodeWriter::processInsets(
         const auto layer_nr = gcode_layer.getLayerNr();
 
         // 检查是否定义了magic_spiralize_range
-        HeightRangeList magic_spiralize_range = mesh.settings.get<HeightRangeList>("magic_spiralize_range");
+        std::string range_string = mesh.settings.get<std::string>("magic_spiralize_range");
         bool should_spiralize = false;
 
-        if (!magic_spiralize_range.isEmpty())
+        // 如果magic_spiralize_range参数存在且不为空，尝试解析
+        if (!range_string.empty())
         {
-            // 使用范围控制：计算当前层的模型净高度
-            coord_t layer_z = 0;
-            if (layer_nr >= 0)
+            HeightRangeList magic_spiralize_range = mesh.settings.get<HeightRangeList>("magic_spiralize_range");
+
+            // 如果解析成功（范围列表不为空），使用范围控制
+            if (!magic_spiralize_range.isEmpty())
             {
-                const coord_t layer_height = mesh.settings.get<coord_t>("layer_height");
-                const coord_t initial_layer_thickness = mesh.settings.get<coord_t>("layer_height_0");
+                // 使用正确的层Z坐标（支持可变层厚）
+                coord_t layer_z = 0;
+                if (layer_nr >= 0 && layer_nr < static_cast<LayerIndex>(mesh.layers.size()))
+                {
+                    layer_z = mesh.layers[layer_nr].printZ;
+                    spdlog::debug("螺旋范围控制：第{}层，使用正确的printZ={:.2f}mm（支持可变层厚）",
+                                 layer_nr, INT2MM(layer_z));
+                }
 
-                if (layer_nr == 0)
-                {
-                    layer_z = initial_layer_thickness;
-                }
-                else
-                {
-                    layer_z = initial_layer_thickness + (layer_nr - 1) * layer_height;
-                }
+                should_spiralize = magic_spiralize_range.isInRange(layer_z);
             }
-
-            should_spiralize = magic_spiralize_range.isInRange(layer_z);
+            else
+            {
+                // magic_spiralize_range参数存在但解析失败，回退到全螺旋模式
+                should_spiralize = layer_nr >= initial_bottom_layers;
+            }
         }
         else
         {
-            // 使用原有的initial_bottom_layers逻辑
+            // 没有定义magic_spiralize_range参数，使用原有的initial_bottom_layers逻辑
             should_spiralize = layer_nr >= initial_bottom_layers;
         }
 
@@ -3158,19 +3190,37 @@ bool FffGcodeWriter::processInsets(
         }
 
         spiralize = should_spiralize;
+
+        // 检查是否启用平滑螺旋Z坐标功能
+        const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
+
         if (spiralize && gcode_layer.getLayerNr() == initial_bottom_layers && extruder_nr == mesh.settings.get<ExtruderTrain&>("wall_0_extruder_nr").extruder_nr_)
-        { // on the last normal layer first make the outer wall normally and then start a second outer wall from the same hight, but gradually moving upward
-            added_something = true;
-            gcode_layer.setIsInside(true); // going to print stuff inside print object
-            // start this first wall at the same vertex the spiral starts
-            const Polygon& spiral_inset = part.spiral_wall[0];
-            const size_t spiral_start_vertex = storage.spiralize_seam_vertex_indices[static_cast<size_t>(initial_bottom_layers.value)];
-            if (spiral_start_vertex < spiral_inset.size())
+        {
+            // 螺旋模式过渡层处理
+            if (smooth_spiralized_z)
             {
-                gcode_layer.addTravel(spiral_inset[spiral_start_vertex]);
+                // 启用平滑Z时：单墙，从上一层Z高度线性提升到目标层高度，挤出量从0线性增加到设定值
+                added_something = true;
+                gcode_layer.setIsInside(true);
+
+                // 使用特殊的螺旋过渡处理
+                const Polygon& spiral_inset = part.spiral_wall[0];
+                const size_t spiral_start_vertex = storage.spiralize_seam_vertex_indices[static_cast<size_t>(initial_bottom_layers.value)];
+                if (spiral_start_vertex < spiral_inset.size())
+                {
+                    const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
+                    if (!smooth_spiralized_z) gcode_layer.addTravel(spiral_inset[spiral_start_vertex]);
+                }
+
+                // 使用特殊的螺旋过渡模式，从0流量开始线性增加
+                gcode_layer.addSpiralTransitionWall(part.spiral_wall, mesh_config.inset0_config, mesh.settings, spiral_start_vertex);
+
+                spdlog::info("【螺旋过渡】第{}层，使用平滑Z过渡模式，单墙从上一层高度线性提升", gcode_layer.getLayerNr());
             }
-            int wall_0_wipe_dist(0);
-            gcode_layer.addPolygonsByOptimizer(part.spiral_wall, mesh_config.inset0_config, mesh.settings, ZSeamConfig(), wall_0_wipe_dist);
+            else
+            {
+                spdlog::info("【螺旋过渡】第{}层，使用传统双墙过渡模式", gcode_layer.getLayerNr());
+            }
         }
     }
     // for non-spiralized layers, determine the shape of the unsupported areas below this part
@@ -3426,11 +3476,20 @@ bool FffGcodeWriter::processInsets(
         // one part higher up. Once all the parts have merged, layers above that level will be spiralized
         if (&mesh.layers[gcode_layer.getLayerNr()].parts[0] == &part)
         {
-            processSpiralizedWall(storage, gcode_layer, mesh_config, part, mesh);
+            const auto initial_bottom_layers = LayerIndex(mesh.settings.get<size_t>("initial_bottom_layers"));
+            if (gcode_layer.getLayerNr() != initial_bottom_layers)
+            {
+                const Polygon& spiral_inset = part.spiral_wall[0];
+                const size_t spiral_start_vertex = storage.spiralize_seam_vertex_indices[gcode_layer.getLayerNr()];
+                processSpiralizedWall(storage, gcode_layer, mesh_config, part, mesh);
+            }
         }
-        else
+        else if ( ! mesh.settings.get<bool>("only_spiralize_out_surface")) //只有only_spiralize_out_surface为false，才会去打印其他的截面
         {
             // Print the spiral walls of other parts as single walls without Z gradient.
+            const Polygon& spiral_inset = part.spiral_wall[0];
+            const size_t spiral_start_vertex = storage.spiralize_seam_vertex_indices[gcode_layer.getLayerNr()];
+            gcode_layer.addTravel(spiral_inset[spiral_start_vertex], false);
             gcode_layer.addWalls(part.spiral_wall, mesh.settings, mesh_config.inset0_config, mesh_config.inset0_config, mesh_config.inset0_config, mesh_config.inset0_config);
         }
     }
@@ -3445,24 +3504,13 @@ bool FffGcodeWriter::processInsets(
         const LayerIndex layer_nr = gcode_layer.getLayerNr();
         coord_t layer_z = 0;  // 当前层的Z坐标（微米单位）
 
-        if (layer_nr >= 0)
+        if (layer_nr >= 0 && layer_nr < static_cast<LayerIndex>(mesh.layers.size()))
         {
-            // 正常模型层：计算累积的模型净高度
-            const coord_t layer_height = mesh.settings.get<coord_t>("layer_height");           // 普通层厚度
-            const coord_t initial_layer_thickness = mesh.settings.get<coord_t>("layer_height_0"); // 第一层厚度
+            // 正常模型层：使用正确的层Z坐标（支持可变层厚）
+            layer_z = mesh.layers[layer_nr].printZ;
 
-            if (layer_nr == 0)
-            {
-                // 第一层：直接使用第一层厚度
-                layer_z = initial_layer_thickness;
-            }
-            else
-            {
-                // 后续层：第一层厚度 + (层号-1) * 普通层厚度
-                layer_z = initial_layer_thickness + (layer_nr - 1) * layer_height;
-            }
-
-            spdlog::debug("外轮廓层Z坐标计算: 层号={}, 净高度={:.2f}mm", layer_nr, INT2MM(layer_z));
+            spdlog::debug("外轮廓层Z坐标计算: 层号={}, 使用正确的printZ={:.2f}mm（支持可变层厚）",
+                         layer_nr, INT2MM(layer_z));
         }
         else
         {

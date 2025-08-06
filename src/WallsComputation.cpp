@@ -14,6 +14,7 @@
 
 #include "Application.h"
 #include "ExtruderTrain.h"
+#include "raft.h"
 #include "Slice.h"
 #include "WallToolPaths.h"
 #include "settings/HeightParameterGraph.h"
@@ -40,7 +41,7 @@ WallsComputation::WallsComputation(const Settings& settings, const LayerIndex la
  *
  * generateWalls only reads and writes data for the current layer
  */
-void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_type)
+void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_type, coord_t layer_z)
 {
     size_t wall_count = settings_.get<size_t>("wall_line_count");
     if (wall_count == 0) // Early out if no walls are to be generated
@@ -55,37 +56,44 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
     if (spiralize)
     {
         // 检查是否定义了magic_spiralize_range
-        HeightRangeList magic_spiralize_range = settings_.get<HeightRangeList>("magic_spiralize_range");
-        if (!magic_spiralize_range.isEmpty())
+        std::string range_string = settings_.get<std::string>("magic_spiralize_range");
+
+        // 如果magic_spiralize_range参数存在且不为空，尝试解析
+        if (!range_string.empty())
         {
-            // 计算当前层的模型净高度（复用现有逻辑）
-            coord_t layer_z = 0;
-            if (layer_nr_ >= 0)
+            HeightRangeList magic_spiralize_range = settings_.get<HeightRangeList>("magic_spiralize_range");
+
+            // 如果解析成功（范围列表不为空），使用范围控制
+            if (!magic_spiralize_range.isEmpty())
             {
-                const coord_t layer_height = settings_.get<coord_t>("layer_height");
-                const coord_t initial_layer_thickness = settings_.get<coord_t>("layer_height_0");
+                // 使用传入的正确Z坐标（支持可变层厚）
+                // layer_z参数来自generateWalls(SliceLayer* layer)中的layer->printZ
+                coord_t current_layer_z = layer_z;
 
-                if (layer_nr_ == 0)
-                {
-                    layer_z = initial_layer_thickness;
-                }
-                else
-                {
-                    layer_z = initial_layer_thickness + (layer_nr_ - 1) * layer_height;
-                }
+                // 检查当前高度是否在指定范围内
+                bool in_range = magic_spiralize_range.isInRange(current_layer_z);
+                spiralize = in_range;
+
+                // 调试信息
+                spdlog::info("【螺旋范围控制】第{}层，高度{:.3f}mm（使用正确的printZ），范围检查结果：{}，螺旋模式：{}",
+                             layer_nr_, current_layer_z / 1000.0, in_range ? "在范围内" : "超出范围", spiralize ? "启用" : "禁用");
             }
+            else
+            {
+                // magic_spiralize_range参数存在但解析失败，回退到全螺旋模式
+                // 这种情况下，用户开启了magic_spiralize但magic_spiralize_range解析失败
+                // 按照用户要求：所有范围都使用螺旋模式
+                const size_t initial_bottom_layers = settings_.get<size_t>("initial_bottom_layers");
+                spiralize = layer_nr_ >= static_cast<LayerIndex>(initial_bottom_layers);
 
-            // 检查当前高度是否在指定范围内
-            bool in_range = magic_spiralize_range.isInRange(layer_z);
-            spiralize = in_range;
-
-            // 调试信息
-            spdlog::info("【螺旋范围控制】第{}层，高度{:.3f}mm，范围检查结果：{}，螺旋模式：{}",
-                         layer_nr_, layer_z / 1000.0, in_range ? "在范围内" : "超出范围", spiralize ? "启用" : "禁用");
+                // 调试信息
+                spdlog::info("【螺旋范围控制】magic_spiralize_range解析失败，回退到全螺旋模式，第{}层，螺旋模式：{}",
+                             layer_nr_, spiralize ? "启用" : "禁用");
+            }
         }
         else
         {
-            // 没有定义范围，使用原有的initial_bottom_layers逻辑
+            // 没有定义magic_spiralize_range参数，使用原有的initial_bottom_layers逻辑
             const size_t initial_bottom_layers = settings_.get<size_t>("initial_bottom_layers");
             spiralize = layer_nr_ >= static_cast<LayerIndex>(initial_bottom_layers);
 
@@ -124,10 +132,10 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
         spdlog::info("【墙体生成】第{}层，生成螺旋墙体", layer_nr_);
         const bool recompute_outline_based_on_outer_wall = settings_.get<bool>("support_enable") && ! settings_.get<bool>("fill_outline_gaps");
 
-        generateSpiralInsets(part, line_width_0, wall_0_inset, recompute_outline_based_on_outer_wall);
+        generateSpiralInsets(part, line_width_0, wall_0_inset, recompute_outline_based_on_outer_wall, layer_z);
         if (layer_nr_ <= static_cast<LayerIndex>(settings_.get<size_t>("initial_bottom_layers")))
         {
-            WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type);
+            WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type, layer_z);
             part->wall_toolpaths = wall_tool_paths.getToolPaths();
             part->inner_area = wall_tool_paths.getInnerContour();
         }
@@ -135,7 +143,7 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
     else
     {
         spdlog::info("【墙体生成】第{}层，生成正常墙体（包含inset/infill/skin）", layer_nr_);
-        WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type);
+        WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type, layer_z);
         part->wall_toolpaths = wall_tool_paths.getToolPaths();
         part->inner_area = wall_tool_paths.getInnerContour();
     }
@@ -152,9 +160,14 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
  */
 void WallsComputation::generateWalls(SliceLayer* layer, SectionType section)
 {
+    // 获取当前层的正确Z坐标（支持可变层厚）
+    coord_t layer_z = layer->printZ;
+
+    spdlog::info("【可变层厚修复】第{}层，使用正确的层Z坐标: {:.2f}mm（来自layer->printZ，支持可变层厚）", layer_nr_, INT2MM(layer_z));
+
     for (SliceLayerPart& part : layer->parts)
     {
-        generateWalls(&part, section);
+        generateWalls(&part, section, layer_z);
     }
 
     // Remove the parts which did not generate a wall. As these parts are too small to print,
@@ -170,7 +183,7 @@ void WallsComputation::generateWalls(SliceLayer* layer, SectionType section)
     layer->parts.erase(iterator_remove, layer->parts.end());
 }
 
-void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall)
+void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall, coord_t layer_z)
 {
     // 注意：此函数只在确定需要螺旋模式时才被调用，所以不需要再次检查螺旋条件
 
@@ -249,16 +262,17 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         !settings_.get<std::vector<Point3LL>>("draw_z_seam_points").empty())
     {
         spdlog::info("=== 螺旋模式Z接缝点插值预处理开始 ===");
-        coord_t layer_z = layer_nr_ * settings_.get<coord_t>("layer_height");
+        // 使用传入的正确Z坐标（支持可变层厚）
+        coord_t current_layer_z = layer_z;
 
         Shape processed_spiral_outline;
         for (const Polygon& polygon : spiral_outline)
         {
-            Polygon processed_polygon = insertZSeamInterpolationPointsForSpiral(polygon, layer_z);
+            Polygon processed_polygon = insertZSeamInterpolationPointsForSpiral(polygon, current_layer_z);
             processed_spiral_outline.push_back(processed_polygon);
         }
         spiral_outline = processed_spiral_outline;
-        spdlog::info("螺旋模式Z接缝点插值预处理完成");
+        spdlog::info("螺旋模式Z接缝点插值预处理完成，使用正确的printZ={:.2f}mm", INT2MM(current_layer_z));
     }
 
     // 使用处理后的轮廓生成螺旋wall
@@ -276,16 +290,17 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         !settings_.get<std::vector<Point3LL>>("draw_z_seam_points").empty())
     {
         spdlog::info("=== 螺旋模式Z接缝点插值后处理开始 ===");
-        coord_t layer_z = layer_nr_ * settings_.get<coord_t>("layer_height");
+        // 使用传入的正确Z坐标（支持可变层厚）
+        coord_t current_layer_z = layer_z;
 
         Shape processed_spiral_wall;
         for (const Polygon& polygon : part->spiral_wall)
         {
-            Polygon processed_polygon = insertZSeamInterpolationPointsForSpiral(polygon, layer_z);
+            Polygon processed_polygon = insertZSeamInterpolationPointsForSpiral(polygon, current_layer_z);
             processed_spiral_wall.push_back(processed_polygon);
         }
         part->spiral_wall = processed_spiral_wall;
-        spdlog::info("螺旋模式Z接缝点插值后处理完成");
+        spdlog::info("螺旋模式Z接缝点插值后处理完成，使用正确的printZ={:.2f}mm", INT2MM(current_layer_z));
     }
 
     if (recompute_outline_based_on_outer_wall)
@@ -303,15 +318,39 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
     // 获取Z接缝点列表
     auto z_seam_points = settings_.get<std::vector<Point3LL>>("draw_z_seam_points");
 
-    spdlog::debug("螺旋模式插值处理: 层Z={:.2f}mm, 多边形顶点数={}", INT2MM(layer_z), polygon.size());
+    // === 计算模型Z坐标（去除raft影响）===
+    // 手绘Z接缝点是在原始模型上定义的，需要将切片Z坐标转换为模型Z坐标
+    coord_t model_z = layer_z;
+    const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+    if (mesh_group_settings.get<EPlatformAdhesion>("adhesion_type") == EPlatformAdhesion::RAFT)
+    {
+        // 获取raft总厚度
+        coord_t raft_total_thickness = Raft::getTotalThickness();
 
-    // 创建ZSeamConfig进行插值计算
+        // 获取raft间隙
+        const ExtruderTrain& raft_surface_train = mesh_group_settings.get<ExtruderTrain&>("raft_surface_extruder_nr");
+        coord_t raft_airgap = raft_surface_train.settings_.get<coord_t>("raft_airgap");
+
+        // 计算模型实体高度
+        model_z = layer_z - raft_total_thickness - raft_airgap;
+
+        spdlog::debug("螺旋模式插值Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型Z={:.2f}mm",
+                     INT2MM(layer_z), INT2MM(raft_total_thickness), INT2MM(raft_airgap), INT2MM(model_z));
+    }
+    else
+    {
+        spdlog::debug("螺旋模式插值无Raft结构，模型Z={:.2f}mm（等于层Z）", INT2MM(model_z));
+    }
+
+    spdlog::debug("螺旋模式插值处理: 层Z={:.2f}mm, 模型Z={:.2f}mm, 多边形顶点数={}", INT2MM(layer_z), INT2MM(model_z), polygon.size());
+
+    // 创建ZSeamConfig进行插值计算，使用模型Z坐标（去除raft影响）
     ZSeamConfig temp_config;
     temp_config.draw_z_seam_enable_ = true;
     temp_config.draw_z_seam_points_ = z_seam_points;
     temp_config.z_seam_point_interpolation_ = true;
     temp_config.draw_z_seam_grow_ = settings_.get<bool>("draw_z_seam_grow");
-    temp_config.current_layer_z_ = layer_z;
+    temp_config.current_layer_z_ = model_z;
 
     // 尝试获取插值位置
     auto interpolated_pos = temp_config.getInterpolatedSeamPosition();

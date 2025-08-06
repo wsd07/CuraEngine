@@ -547,12 +547,29 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
         mesh_max_initial_bottom_layer_count = std::max(mesh_max_initial_bottom_layer_count, mesh.settings.get<size_t>("initial_bottom_layers"));
 
         // 检查是否定义了magic_spiralize_range
-        HeightRangeList magic_spiralize_range = mesh.settings.get<HeightRangeList>("magic_spiralize_range");
-        use_spiralize_range = !magic_spiralize_range.isEmpty();
+        std::string range_string = mesh.settings.get<std::string>("magic_spiralize_range");
 
-        if (use_spiralize_range)
+        // 如果magic_spiralize_range参数存在且不为空，尝试解析
+        if (!range_string.empty())
         {
-            spdlog::info("【Skin/Infill处理】检测到magic_spiralize_range，为所有层生成完整数据");
+            HeightRangeList magic_spiralize_range = mesh.settings.get<HeightRangeList>("magic_spiralize_range");
+            use_spiralize_range = !magic_spiralize_range.isEmpty();
+
+            if (use_spiralize_range)
+            {
+                spdlog::info("【Skin/Infill处理】检测到magic_spiralize_range，为所有层生成完整数据");
+            }
+            else
+            {
+                // magic_spiralize_range参数存在但解析失败，回退到传统模式
+                spdlog::info("【Skin/Infill处理】magic_spiralize_range解析失败，回退到传统magic_spiralize模式");
+                use_spiralize_range = false;
+            }
+        }
+        else
+        {
+            // 没有定义magic_spiralize_range参数，使用传统模式
+            use_spiralize_range = false;
         }
     }
 

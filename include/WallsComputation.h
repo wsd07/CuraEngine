@@ -57,8 +57,10 @@ private:
      * Generates the walls / inner area for a single layer part.
      *
      * \param part The part for which to generate the insets.
+     * \param section The section type for the walls.
+     * \param layer_z The actual Z coordinate of this layer (for variable layer heights).
      */
-    void generateWalls(SliceLayerPart* part, SectionType section);
+    void generateWalls(SliceLayerPart* part, SectionType section, coord_t layer_z = -1);
 
     /*!
      * Generates the outer inset / perimeter used in spiralize mode for a single layer part. The spiral inset is
@@ -69,8 +71,9 @@ private:
      * \param wall_0_inset The part for which to generate the spiral inset.
      * \param recompute_outline_based_on_outer_wall Whether we need to recompute the print outline according to the
      *        generated spiral inset.
+     * \param layer_z The actual Z coordinate of this layer (for variable layer heights).
      */
-    void generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall);
+    void generateSpiralInsets(SliceLayerPart* part, coord_t line_width_0, coord_t wall_0_inset, bool recompute_outline_based_on_outer_wall, coord_t layer_z);
 
     /*!
      * Insert interpolated Z seam points into polygon for spiral mode

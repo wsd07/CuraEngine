@@ -31,7 +31,8 @@ WallToolPaths::WallToolPaths(
     const coord_t wall_0_inset,
     const Settings& settings,
     const int layer_idx,
-    SectionType section_type)
+    SectionType section_type,
+    const coord_t layer_z)
     : outline_(outline)
     , bead_width_0_(nominal_bead_width)
     , bead_width_x_(nominal_bead_width)
@@ -44,6 +45,7 @@ WallToolPaths::WallToolPaths(
     , toolpaths_generated_(false)
     , settings_(settings)
     , layer_idx_(layer_idx)
+    , layer_z_(layer_z)
     , section_type_(section_type)
 {
 }
@@ -56,7 +58,8 @@ WallToolPaths::WallToolPaths(
     const coord_t wall_0_inset,
     const Settings& settings,
     const int layer_idx,
-    SectionType section_type)
+    SectionType section_type,
+    const coord_t layer_z)
     : outline_(outline)
     , bead_width_0_(bead_width_0)
     , bead_width_x_(bead_width_x)
@@ -69,6 +72,7 @@ WallToolPaths::WallToolPaths(
     , toolpaths_generated_(false)
     , settings_(settings)
     , layer_idx_(layer_idx)
+    , layer_z_(layer_z)
     , section_type_(section_type)
 {
 }
@@ -125,7 +129,21 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     if (settings_.get<bool>("draw_z_seam_enable") && settings_.get<bool>("z_seam_point_interpolation"))
     {
         spdlog::debug("=== 开始Z接缝点预处理插值 ===");
-        coord_t layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
+
+        // 获取正确的层Z坐标：优先使用传入的layer_z_，否则回退到简单计算
+        coord_t layer_z;
+        if (layer_z_ >= 0)
+        {
+            // 使用传入的正确Z坐标（支持可变层厚）
+            layer_z = layer_z_;
+            spdlog::debug("使用传入的层Z坐标: {:.2f}mm（支持可变层厚）", INT2MM(layer_z));
+        }
+        else
+        {
+            // 回退到简单计算（向后兼容）
+            layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
+            spdlog::debug("使用简单计算的层Z坐标: {:.2f}mm（固定层厚模式）", INT2MM(layer_z));
+        }
 
         Shape processed_outline;
         for (const Polygon& polygon : prepared_outline)
@@ -353,30 +371,45 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
 
         spdlog::debug("第{}层墙：线宽={}, 偏移距离={}", wall_idx, current_line_width, offset_distance);
 
-        // 为当前轮廓的每个多边形创建ExtrusionLine
-        for (const auto& original_polygon : current_outline)
+        // === 修复：先计算偏移后的轮廓，再创建ExtrusionLine ===
+        // 计算当前层墙的偏移轮廓
+        Shape offset_outline = current_outline.offset(-offset_distance);
+
+        // 为偏移后轮廓的每个多边形创建ExtrusionLine
+        for (const auto& offset_polygon : offset_outline)
         {
-            if (original_polygon.size() < 3) continue;  // 跳过无效多边形
+            if (offset_polygon.size() < 3) continue;  // 跳过无效多边形
 
             // === 新策略：在多边形初始化时插入Z接缝插值点 ===
             // 只对外轮廓（wall_idx == 0）进行插值点插入
-            Polygon processed_polygon = original_polygon;
+            Polygon processed_polygon = offset_polygon;
             if (wall_idx == 0)
             {
-                // 计算当前层的Z坐标
-                coord_t layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
-                processed_polygon = insertZSeamInterpolationPoints(original_polygon, settings_, layer_z);
-
-                if (processed_polygon.size() != original_polygon.size())
+                // 获取正确的层Z坐标：优先使用传入的layer_z_，否则回退到简单计算
+                coord_t layer_z;
+                if (layer_z_ >= 0)
                 {
-                    spdlog::debug("外轮廓插值点插入成功：顶点数 {} -> {}",
-                               original_polygon.size(), processed_polygon.size());
+                    // 使用传入的正确Z坐标（支持可变层厚）
+                    layer_z = layer_z_;
+                }
+                else
+                {
+                    // 回退到简单计算（向后兼容）
+                    layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
+                }
+
+                processed_polygon = insertZSeamInterpolationPoints(offset_polygon, settings_, layer_z);
+
+                if (processed_polygon.size() != offset_polygon.size())
+                {
+                    spdlog::debug("外轮廓插值点插入成功：顶点数 {} -> {}，使用Z坐标: {:.2f}mm",
+                               offset_polygon.size(), processed_polygon.size(), INT2MM(layer_z));
                 }
             }
 
             ExtrusionLine wall_line(wall_idx, false);  // inset_idx, is_odd
 
-            // 将多边形的每个点转换为ExtrusionJunction
+            // 将偏移后多边形的每个点转换为ExtrusionJunction
             for (size_t point_idx = 0; point_idx < processed_polygon.size(); point_idx++)
             {
                 ExtrusionJunction junction(processed_polygon[point_idx], current_line_width, wall_idx);
@@ -393,7 +426,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
         }
 
         // 为下一层墙计算新的轮廓（向内偏移）
-        current_outline = current_outline.offset(-offset_distance);
+        current_outline = offset_outline.offset(-offset_distance);
 
         spdlog::debug("第{}层墙生成完成，剩余轮廓多边形数: {}", wall_idx, current_outline.size());
     }

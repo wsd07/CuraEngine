@@ -26,6 +26,8 @@
 #include "utils/views/convert.h"
 #include "utils/views/dfs.h"
 
+#include <spdlog/spdlog.h>
+
 namespace rg = ranges;
 namespace rv = ranges::views;
 
@@ -102,7 +104,82 @@ bool InsetOrderOptimizer::addToLayer()
     const bool use_shortest_for_inner_walls = outer_to_inner;
     auto walls_to_be_added = getWallsToBeAdded(reverse, use_one_extruder);
 
-    const auto order = pack_by_inset ? getInsetOrder(walls_to_be_added, outer_to_inner) : getRegionOrder(walls_to_be_added, outer_to_inner);
+    auto order = pack_by_inset ? getInsetOrder(walls_to_be_added, outer_to_inner) : getRegionOrder(walls_to_be_added, outer_to_inner);
+
+    // === 手绘接缝点墙线优先打印约束修改 ===
+    // 检查是否启用了手绘接缝点功能和优先打印设置
+    if (settings_.get<bool>("z_seam_part_print_first") &&
+        settings_.get<bool>("draw_z_seam_enable") &&
+        settings_.get<bool>("z_seam_point_interpolation"))
+    {
+        auto z_seam_points = settings_.get<std::vector<Point3LL>>("draw_z_seam_points");
+        if (!z_seam_points.empty())
+        {
+            // 计算当前层的Z坐标
+            coord_t layer_z = gcode_layer_.getLayerNr() * settings_.get<coord_t>("layer_height");
+            if (gcode_layer_.getLayerNr() == 0)
+            {
+                layer_z = settings_.get<coord_t>("layer_height_0");
+            }
+
+            // 创建ZSeamConfig进行插值计算
+            ZSeamConfig seam_config_for_interpolation(
+                EZSeamType::USER_SPECIFIED,
+                Point2LL(0, 0),
+                EZSeamCornerPrefType::Z_SEAM_CORNER_PREF_NONE,
+                0,
+                true,  // draw_z_seam_enable
+                z_seam_points,
+                true,  // z_seam_point_interpolation
+                false, // draw_z_seam_grow
+                layer_z
+            );
+
+            auto interpolated_pos = seam_config_for_interpolation.getInterpolatedSeamPosition();
+            if (interpolated_pos.has_value())
+            {
+                Point2LL target_seam_pos = interpolated_pos.value();
+
+                // 找到距离目标接缝点最近的墙线
+                coord_t min_distance = std::numeric_limits<coord_t>::max();
+                const ExtrusionLine* closest_wall = nullptr;
+
+                for (const ExtrusionLine& wall : walls_to_be_added)
+                {
+                    coord_t wall_min_distance = std::numeric_limits<coord_t>::max();
+
+                    // 遍历墙线的所有顶点，找到最近的距离
+                    for (const ExtrusionJunction& junction : wall.junctions_)
+                    {
+                        coord_t distance = vSize(junction.p_ - target_seam_pos);
+                        if (distance < wall_min_distance)
+                        {
+                            wall_min_distance = distance;
+                        }
+                    }
+
+                    if (wall_min_distance < min_distance)
+                    {
+                        min_distance = wall_min_distance;
+                        closest_wall = &wall;
+                    }
+                }
+
+                if (closest_wall != nullptr)
+                {
+                    // 修改order约束，让包含接缝点的墙线优先于其他所有墙线
+                    for (const ExtrusionLine& other_wall : walls_to_be_added)
+                    {
+                        if (&other_wall != closest_wall)
+                        {
+                            // 添加约束：closest_wall 应该在 other_wall 之前打印
+                            order.emplace(closest_wall, &other_wall);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     constexpr Ratio flow = 1.0_r;
 

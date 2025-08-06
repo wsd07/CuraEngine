@@ -90,6 +90,9 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
 
     Point2LL first_location_new_layer = new_layer_destination_state->first;
 
+    // 在添加层间移动之前，优化前一层的路径顺序，使其终点尽可能接近下一层起始点
+    prev_layer->optimizeLayerEndForNextLayerStart(first_location_new_layer);
+
     assert(newest_layer->extruder_plans_.front().paths_[0].points.size() == 1);
     assert(newest_layer->extruder_plans_.front().paths_[0].points[0].toPoint2LL() == first_location_new_layer);
 
