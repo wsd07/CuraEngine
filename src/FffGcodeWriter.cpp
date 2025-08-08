@@ -48,6 +48,40 @@ constexpr coord_t EPSILON = 5;
 const FffGcodeWriter::RoofingFlooringSettingsNames FffGcodeWriter::roofing_settings_names = { "roofing_extruder_nr", "roofing_pattern", "roofing_monotonic" };
 const FffGcodeWriter::RoofingFlooringSettingsNames FffGcodeWriter::flooring_settings_names = { "flooring_extruder_nr", "flooring_pattern", "flooring_monotonic" };
 
+/*!
+ * \brief 在多边形中找到距离指定点最近的顶点索引
+ *
+ * 遍历多边形的所有顶点，找到距离目标点最近的顶点
+ *
+ * \param polygon 多边形
+ * \param target_point 目标点
+ * \return 最近顶点的索引
+ */
+int findClosestVertexToPoint(const Polygon& polygon, const Point2LL& target_point)
+{
+    if (polygon.empty())
+    {
+        return 0;
+    }
+
+    int closest_idx = 0;
+    coord_t min_distance_squared = vSize2(polygon[0] - target_point);
+
+    for (size_t i = 1; i < polygon.size(); i++)
+    {
+        coord_t distance_squared = vSize2(polygon[i] - target_point);
+        if (distance_squared < min_distance_squared)
+        {
+            min_distance_squared = distance_squared;
+            closest_idx = static_cast<int>(i);
+        }
+    }
+
+    return closest_idx;
+}
+
+
+
 FffGcodeWriter::FffGcodeWriter()
     : max_object_height(0)
     , layer_plan_buffer(gcode)
@@ -3091,7 +3125,12 @@ void FffGcodeWriter::processSpiralizedWall(
     const Polygon* last_wall_outline = &(part.spiral_wall[0]); // default to current wall outline
     int last_seam_vertex_idx = -1; // last layer seam vertex index
     int layer_nr = gcode_layer.getLayerNr();
-    if (layer_nr > 0)
+    const int initial_bottom_layers = mesh.settings.get<size_t>("initial_bottom_layers");
+    const bool is_bottom_layer = (layer_nr == initial_bottom_layers);
+    const bool is_top_layer = ((size_t)layer_nr == (storage.spiralize_wall_outlines.size() - 1) || storage.spiralize_wall_outlines[layer_nr + 1] == nullptr);
+    const int seam_vertex_idx = storage.spiralize_seam_vertex_indices[layer_nr]; // use pre-computed seam vertex index for current layer
+
+    if (layer_nr > 0 && !is_bottom_layer)
     {
         if (storage.spiralize_wall_outlines[layer_nr - 1] != nullptr)
         {
@@ -3101,14 +3140,69 @@ void FffGcodeWriter::processSpiralizedWall(
             last_seam_vertex_idx = storage.spiralize_seam_vertex_indices[layer_nr - 1];
         }
     }
-    const bool is_bottom_layer = (layer_nr == mesh.settings.get<LayerIndex>("initial_bottom_layers"));
-    const bool is_top_layer = ((size_t)layer_nr == (storage.spiralize_wall_outlines.size() - 1) || storage.spiralize_wall_outlines[layer_nr + 1] == nullptr);
-    const int seam_vertex_idx = storage.spiralize_seam_vertex_indices[layer_nr]; // use pre-computed seam vertex index for current layer
 
     // output a wall slice that is interpolated between the last and current walls
-    for (const Polygon& wall_outline : part.spiral_wall)
+    // 检查是否为加强层
+    const size_t reinforce_layers = mesh.settings.get<size_t>("magic_spiralize_reinforce_layers");
+    const bool is_reinforce_layer = (reinforce_layers > 0 && (layer_nr - initial_bottom_layers) < reinforce_layers);
+
+    // 跟踪上一个结束点，用于优化加强圈起点
+    Point2LL last_end_point = gcode_layer.getLastPlannedPositionOrStartingPosition();
+
+    for (size_t wall_idx = 0; wall_idx < part.spiral_wall.size(); wall_idx++)
     {
-        gcode_layer.spiralizeWallSlice(mesh_config.inset0_config, wall_outline, *last_wall_outline, seam_vertex_idx, last_seam_vertex_idx, is_top_layer, is_bottom_layer);
+        const Polygon& wall_outline = part.spiral_wall[wall_idx];
+
+        // 判断当前是否为加强圈
+        // 第一个多边形是主螺旋圈，后续的是加强圈
+        bool is_reinforcement_contour = false;
+        if (is_reinforce_layer && wall_idx > 0)
+        {
+            // 在加强层中，除了第一个多边形（主螺旋圈）外，其他都是加强圈
+            is_reinforcement_contour = true;
+        }
+
+        if (is_reinforcement_contour)
+        {
+            // 加强圈：使用固定Z高度（不进行螺旋化）
+            // 使用存储的线宽数据，避免重复计算
+            coord_t reinforcement_line_width = mesh_config.inset0_config.getLineWidth(); // 默认值
+            if (wall_idx < part.spiral_wall_width.size())
+            {
+                reinforcement_line_width = part.spiral_wall_width[wall_idx];
+                spdlog::debug("【螺旋加强线宽】第{}层，加强圈{}，使用存储的线宽：{}μm",
+                             layer_nr, wall_idx, reinforcement_line_width);
+            }
+            else
+            {
+                spdlog::warn("【螺旋加强线宽】第{}层，加强圈{}，索引超出范围，使用默认线宽：{}μm",
+                            layer_nr, wall_idx, reinforcement_line_width);
+            }
+
+            // 优化加强圈起点：找到距离上一个结束点最近的点
+            int optimized_seam_vertex_idx = findClosestVertexToPoint(wall_outline, last_end_point);
+
+            spdlog::debug("【螺旋加强起点优化】第{}层，加强圈{}，原起点索引：{}，优化后起点索引：{}，距离：{:.2f}mm",
+                         layer_nr, wall_idx, seam_vertex_idx, optimized_seam_vertex_idx,
+                         INT2MM(vSize(wall_outline[optimized_seam_vertex_idx] - last_end_point)));
+
+            gcode_layer.spiralizeReinforcementContour(mesh_config.inset0_config, wall_outline, optimized_seam_vertex_idx, reinforcement_line_width);
+
+            // 更新上一个结束点（加强圈的结束点就是起点）
+            last_end_point = wall_outline[optimized_seam_vertex_idx];
+        }
+        else if (!is_bottom_layer)
+        {
+            // 主螺旋圈：使用正常的螺旋化逻辑
+            gcode_layer.spiralizeWallSlice(mesh_config.inset0_config, wall_outline, *last_wall_outline, seam_vertex_idx, last_seam_vertex_idx, is_top_layer, is_bottom_layer);
+
+            // 更新上一个结束点（主螺旋圈的结束点）
+            if (!wall_outline.empty())
+            {
+                // 主螺旋圈的结束点是seam_vertex_idx位置
+                last_end_point = wall_outline[seam_vertex_idx];
+            }
+        }
     }
 
     // 如果是最高层，添加螺旋结束墙（保持Z高度不变，流量线性减少到0）
@@ -3476,13 +3570,8 @@ bool FffGcodeWriter::processInsets(
         // one part higher up. Once all the parts have merged, layers above that level will be spiralized
         if (&mesh.layers[gcode_layer.getLayerNr()].parts[0] == &part)
         {
-            const auto initial_bottom_layers = LayerIndex(mesh.settings.get<size_t>("initial_bottom_layers"));
-            if (gcode_layer.getLayerNr() != initial_bottom_layers)
-            {
-                const Polygon& spiral_inset = part.spiral_wall[0];
-                const size_t spiral_start_vertex = storage.spiralize_seam_vertex_indices[gcode_layer.getLayerNr()];
-                processSpiralizedWall(storage, gcode_layer, mesh_config, part, mesh);
-            }
+            // Spiralize the first part of the mesh.
+            processSpiralizedWall(storage, gcode_layer, mesh_config, part, mesh);
         }
         else if ( ! mesh.settings.get<bool>("only_spiralize_out_surface")) //只有only_spiralize_out_surface为false，才会去打印其他的截面
         {

@@ -278,10 +278,236 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
     // 使用处理后的轮廓生成螺旋wall
     part->spiral_wall = spiral_outline.offset(-line_width_0 / 2 - wall_0_inset);
 
+    // 初始化spiral_wall_width，主螺旋圈使用标准线宽
+    part->spiral_wall_width.clear();
+    for (size_t i = 0; i < part->spiral_wall.size(); i++)
+    {
+        part->spiral_wall_width.push_back(line_width_0); // 主螺旋圈使用标准线宽
+    }
+
+    // === 螺旋模式加强层处理 ===
+    // 检查是否需要添加加强层
+    const int initial_bottom_layers = settings_.get<size_t>("initial_bottom_layers");
+    const size_t reinforce_layers = settings_.get<size_t>("magic_spiralize_reinforce_layers");
+    if (reinforce_layers > 0 && (layer_nr_ - initial_bottom_layers) < reinforce_layers)
+    {
+        const double reinforce_contours_raw = settings_.get<double>("magic_spiralize_reinforce_contours");
+        const bool reinforce_flip = settings_.get<bool>("magic_spiralize_reinforce_flip");
+        const bool reinforce_fade = settings_.get<bool>("magic_spiralize_reinforce_fade");
+
+        // 获取新参数：最后一层的圈数
+        double reinforce_mini_contours = reinforce_contours_raw; // 默认值
+        if (reinforce_fade && reinforce_layers > 1)
+        {
+            try {
+                reinforce_mini_contours = settings_.get<double>("magic_spiralize_reinforce_mini_contours");
+            } catch (...) {
+                // 参数未设置，使用默认值
+                reinforce_mini_contours = 0.5;
+            }
+        }
+
+        // 按照用户算法计算当前层的圈数
+        double current_contours_count = reinforce_contours_raw;
+        if (reinforce_fade && reinforce_layers > 1)
+        {
+            // 计算当前层在加强层中的位置（从0开始）
+            size_t current_layer_in_reinforce = (layer_nr_ - initial_bottom_layers);
+
+            // 计算每层的圈数差
+            double contours_diff_per_layer = (reinforce_contours_raw - reinforce_mini_contours) / (reinforce_layers - 1);
+
+            // 计算当前层的圈数
+            current_contours_count = reinforce_contours_raw - current_layer_in_reinforce * contours_diff_per_layer;
+
+            spdlog::info("【螺旋加强算法】第{}层，首层圈数：{:.2f}，末层圈数：{:.2f}，每层差值：{:.2f}，当前层圈数：{:.2f}",
+                        layer_nr_, reinforce_contours_raw, reinforce_mini_contours, contours_diff_per_layer, current_contours_count);
+        }
+        else
+        {
+            spdlog::info("【螺旋加强算法】第{}层，固定圈数：{:.2f}（未启用渐变）", layer_nr_, current_contours_count);
+        }
+
+        // 计算实际需要的圈数（四舍五入）
+        size_t actual_contour_count = static_cast<size_t>(std::round(current_contours_count));
+
+        // 如果四舍五入后为0，跳过加强结构生成
+        if (actual_contour_count == 0)
+        {
+            spdlog::info("【螺旋加强算法】第{}层，四舍五入后圈数为0，跳过加强结构生成", layer_nr_);
+            return;
+        }
+
+        // 计算剩余宽度（最内圈的宽度）
+        double remaining_width = current_contours_count - (actual_contour_count - 1);
+
+        spdlog::info("【螺旋加强算法】第{}层，目标圈数：{:.2f}，最终圈数：{}，最内圈宽度：{:.2f}，反向：{}",
+                    layer_nr_, current_contours_count, actual_contour_count, remaining_width, reinforce_flip ? "是" : "否");
+
+        // 按照用户算法实现圈数和宽度计算
+        std::vector<std::pair<coord_t, coord_t>> contour_info; // {offset, width}
+
+        spdlog::info("【螺旋加强算法】第{}层，最终圈数：{}，前{}圈为1倍wall_0，最内圈宽度：{:.2f}倍wall_0",
+                    layer_nr_, actual_contour_count, actual_contour_count - 1, remaining_width);
+
+
+        // 重新排序：最内圈（可变宽度）在最里面，外圈（固定宽度）在外面
+        for (size_t i = 0; i < actual_contour_count; i++)
+        {
+            if (i == 0)
+            {
+                // 第一个生成的是最内圈（可变宽度，偏移最多）
+                coord_t inner_width = static_cast<coord_t>(remaining_width * line_width_0);
+                coord_t offset = (0.5 + remaining_width / 2 + (actual_contour_count-1))*line_width_0;
+                contour_info.emplace_back(offset, inner_width);
+                spdlog::debug("【螺旋加强】最内圈（可变），偏移{}μm，宽度{}μm（{:.2f}倍wall_0）",
+                             offset, inner_width, remaining_width);
+            }
+            else
+            {
+                // 后面的圈都是固定1倍wall_0（外圈）
+                coord_t offset = (actual_contour_count - i)*line_width_0;
+                contour_info.emplace_back(offset, line_width_0);
+                spdlog::debug("【螺旋加强】外圈{}（固定），偏移{}μm，宽度{}μm（1.0倍wall_0）",
+                             i, offset, line_width_0);
+            }
+        }
+
+        spdlog::info("【螺旋加强算法】第{}层，总共生成{}个加强圈（最内圈可变，外圈固定）", layer_nr_, contour_info.size());
+
+        // 按照从内到外的顺序生成加强圈（打印顺序）
+        //std::reverse(contour_info.begin(), contour_info.end());
+
+        for (size_t i = 0; i < contour_info.size(); i++)
+        {
+            coord_t offset = contour_info[i].first;
+            coord_t width = contour_info[i].second;
+
+            Shape reinforcement_wall = part->spiral_wall.offset(-offset);
+
+            spdlog::info("【螺旋加强】第{}层，第{}个加强圈，偏移{}μm，宽度{}μm，生成多边形数量：{}",
+                         layer_nr_, i + 1, offset, width, reinforcement_wall.size());
+
+            // 检查偏移结果是否为空
+            if (reinforcement_wall.empty())
+            {
+                spdlog::warn("【螺旋加强】第{}层，第{}个加强圈偏移后为空，偏移量可能过大", layer_nr_, i + 1);
+                continue;
+            }
+
+            // 检查是否需要反向
+            if (reinforce_flip)
+            {
+                for (Polygon& poly : reinforcement_wall)
+                {
+                    // 反向后需要将点序列向前平移1位，保持起点位置不变
+                    if (poly.size() > 1)
+                    {
+                        std::rotate(poly.begin(), poly.begin() + 1, poly.end());
+                    }
+                    poly.reverse();
+                }
+            }
+
+            // 将加强圈添加到 spiral_wall 中，同时记录宽度
+            size_t added_count = 0;
+            for (const Polygon& reinforce_poly : reinforcement_wall)
+            {
+                if (reinforce_poly.size() >= 3) // 确保多边形有效
+                {
+                    part->spiral_wall.push_back(reinforce_poly);
+                    part->spiral_wall_width.push_back(width); // 记录对应的宽度
+                    added_count++;
+                }
+            }
+
+            spdlog::info("【螺旋加强】第{}层，第{}个加强圈，成功添加{}个多边形到spiral_wall，宽度{}μm",
+                         layer_nr_, i + 1, added_count, width);
+        }
+    }
+
     // 优化wall路径，防止打印机固件缓冲区不足，并减少CuraEngine的处理时间
     const ExtruderTrain& train_wall = settings_.get<ExtruderTrain&>("wall_0_extruder_nr");
-    part->spiral_wall = Simplify(train_wall.settings_).polygon(part->spiral_wall);
-    part->spiral_wall.removeDegenerateVerts();
+
+    // 分别处理主螺旋圈和加强圈，避免Simplify操作移除加强圈
+    if (reinforce_layers > 0 && (layer_nr_ - initial_bottom_layers) < reinforce_layers && part->spiral_wall.size() > 1)
+    {
+        spdlog::info("【螺旋加强】第{}层，分别优化主螺旋圈和加强圈，总数量：{}", layer_nr_, part->spiral_wall.size());
+
+        // 主螺旋圈（第一个多边形）
+        Shape main_spiral;
+        std::vector<coord_t> main_spiral_width;
+        if (!part->spiral_wall.empty())
+        {
+            main_spiral.push_back(part->spiral_wall[0]);
+            main_spiral_width.push_back(part->spiral_wall_width[0]);
+            main_spiral = Simplify(train_wall.settings_).polygon(main_spiral);
+            main_spiral.removeDegenerateVerts();
+        }
+
+        // 加强圈（其余多边形）- 轻度简化，避免移除
+        Shape reinforcement_spirals;
+        std::vector<coord_t> reinforcement_spirals_width;
+        for (size_t i = 1; i < part->spiral_wall.size(); i++)
+        {
+            reinforcement_spirals.push_back(part->spiral_wall[i]);
+            reinforcement_spirals_width.push_back(part->spiral_wall_width[i]);
+        }
+
+        // 对加强圈使用更保守的简化参数
+        if (!reinforcement_spirals.empty())
+        {
+            // 只移除退化顶点，不进行复杂的简化
+            reinforcement_spirals.removeDegenerateVerts();
+        }
+
+        // 重新组合
+        part->spiral_wall.clear();
+        part->spiral_wall_width.clear();
+        for (size_t i = 0; i < main_spiral.size(); i++)
+        {
+            part->spiral_wall.push_back(main_spiral[i]);
+            if (i < main_spiral_width.size())
+            {
+                part->spiral_wall_width.push_back(main_spiral_width[i]);
+            }
+            else
+            {
+                part->spiral_wall_width.push_back(line_width_0); // 默认宽度
+            }
+        }
+        for (size_t i = 0; i < reinforcement_spirals.size(); i++)
+        {
+            part->spiral_wall.push_back(reinforcement_spirals[i]);
+            if (i < reinforcement_spirals_width.size())
+            {
+                part->spiral_wall_width.push_back(reinforcement_spirals_width[i]);
+            }
+            else
+            {
+                part->spiral_wall_width.push_back(line_width_0); // 默认宽度
+            }
+        }
+
+        spdlog::info("【螺旋加强】第{}层，优化后数量：{}（主螺旋：{}，加强圈：{}）",
+                     layer_nr_, part->spiral_wall.size(), main_spiral.size(), reinforcement_spirals.size());
+    }
+    else
+    {
+        // 没有加强圈，使用正常的简化
+        part->spiral_wall = Simplify(train_wall.settings_).polygon(part->spiral_wall);
+        part->spiral_wall.removeDegenerateVerts();
+
+        // 确保宽度数组与多边形数组大小一致
+        while (part->spiral_wall_width.size() > part->spiral_wall.size())
+        {
+            part->spiral_wall_width.pop_back();
+        }
+        while (part->spiral_wall_width.size() < part->spiral_wall.size())
+        {
+            part->spiral_wall_width.push_back(line_width_0);
+        }
+    }
 
     // === 螺旋模式Z接缝点插值后处理 ===
     // offset和simplify操作可能会丢失插值点，需要在最终的spiral_wall上重新插入

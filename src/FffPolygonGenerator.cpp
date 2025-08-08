@@ -1151,6 +1151,107 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
         SliceLayer& layer = mesh.layers[layer_nr];
         for (SliceLayerPart& part : layer.parts)
         {
+            // === 处理螺旋模式的 fuzzy skin ===
+            if (!part.spiral_wall.empty())
+            {
+                Shape fuzzy_spiral_wall;
+                for (const Polygon& spiral_polygon : part.spiral_wall)
+                {
+                    if (spiral_polygon.size() < 3)
+                    {
+                        // 点数太少，直接保留原始多边形
+                        fuzzy_spiral_wall.push_back(spiral_polygon);
+                        continue;
+                    }
+
+                    // 对于spiral_wall，简化outside_only逻辑处理
+                    // spiral_wall是螺旋模式的外轮廓，通常应该应用fuzzy skin
+                    // 所以我们对spiral_wall不应用outside_only限制
+                    bool skip_this_polygon = false;
+
+                    // 注意：对于spiral_wall，我们不检查outside_only
+                    // 因为spiral_wall本身就是外轮廓的表示，用户启用spiralize模式
+                    // 通常希望这些轮廓都有fuzzy效果
+
+                    if (skip_this_polygon)
+                    {
+                        fuzzy_spiral_wall.push_back(spiral_polygon);
+                        continue;
+                    }
+
+                    // 应用fuzzy效果到螺旋多边形
+                    Polygon fuzzy_polygon;
+
+                    // 生成fuzzy点
+                    int64_t dist_left_over = (min_dist_between_points / 4) + rand() % (min_dist_between_points / 4);
+
+                    for (size_t i = 0; i < spiral_polygon.size(); ++i)
+                    {
+                        const Point2LL& p0 = spiral_polygon[i];
+                        const Point2LL& p1 = spiral_polygon[(i + 1) % spiral_polygon.size()];
+
+                        if (p0 == p1) // 避免重复点
+                        {
+                            fuzzy_polygon.push_back(p1);
+                            continue;
+                        }
+
+                        const Point2LL p0p1 = p1 - p0;
+                        const int64_t p0p1_size = vSize(p0p1);
+                        int64_t p0pa_dist = dist_left_over;
+
+                        if (p0pa_dist >= p0p1_size)
+                        {
+                            // 如果剩余距离大于线段长度，在中点添加一个点
+                            const Point2LL p = p1 - (p0p1 / 2);
+                            fuzzy_polygon.push_back(p);
+                        }
+
+                        // 在线段上生成fuzzy点
+                        for (; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + rand() % range_random_point_dist)
+                        {
+                            const int r = rand() % (fuzziness * 2) - fuzziness;
+                            const Point2LL perp_to_p0p1 = turn90CCW(p0p1);
+                            const Point2LL fuzz = normal(perp_to_p0p1, r);
+                            const Point2LL pa = p0 + normal(p0p1, p0pa_dist);
+                            fuzzy_polygon.push_back(pa + fuzz);
+                        }
+
+                        dist_left_over = p0pa_dist - p0p1_size;
+                    }
+
+                    // 确保至少有3个点
+                    while (fuzzy_polygon.size() < 3 && spiral_polygon.size() >= 3)
+                    {
+                        size_t point_idx = spiral_polygon.size() - 2;
+                        fuzzy_polygon.push_back(spiral_polygon[point_idx]);
+                        if (point_idx == 0)
+                        {
+                            break;
+                        }
+                        point_idx--;
+                    }
+
+                    if (fuzzy_polygon.size() < 3)
+                    {
+                        // 如果还是不够3个点，直接使用原始多边形
+                        fuzzy_spiral_wall.push_back(spiral_polygon);
+                    }
+                    else
+                    {
+                        // 确保闭合多边形的首尾点一致
+                        if (!fuzzy_polygon.empty() && spiral_polygon.front() == spiral_polygon.back())
+                        {
+                            fuzzy_polygon.back() = fuzzy_polygon.front();
+                        }
+                        fuzzy_spiral_wall.push_back(fuzzy_polygon);
+                    }
+                }
+
+                // 更新螺旋壁
+                part.spiral_wall = fuzzy_spiral_wall;
+            }
+
             std::vector<VariableWidthLines> result_paths;
             for (auto& toolpath : part.wall_toolpaths)
             {

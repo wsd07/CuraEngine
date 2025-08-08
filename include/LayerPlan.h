@@ -305,6 +305,16 @@ public:
     void optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_start_point);
 
     /*!
+     * \brief 创建一个使用 combing 的 travel 路径
+     * \param from_point 起始点
+     * \param to_point 目标点
+     * \param layer_z 层高度
+     * \param extruder_nr 挤出机编号
+     * \return 包含 combing 路径的 GCodePath 向量
+     */
+    std::vector<GCodePath> createCombingTravel(const Point2LL& from_point, const Point2LL& to_point, coord_t layer_z, size_t extruder_nr);
+
+    /*!
      * Get the destination state of the first travel move.
      * This consists of the location and whether the destination was inside the model, or e.g. to support
      *
@@ -818,6 +828,22 @@ public:
         int last_seam_vertex_idx,
         const bool is_top_layer,
         const bool is_bottom_layer);
+
+    /*!
+     * \brief 打印螺旋模式的加强圈
+     *
+     * 加强圈使用固定的Z高度（不进行螺旋化），以提供额外的结构强度
+     *
+     * \param config 打印配置
+     * \param wall 加强圈的多边形
+     * \param seam_vertex_idx 缝合点索引
+     * \param line_width 线宽（可选，用于可变线宽）
+     */
+    void spiralizeReinforcementContour(
+        const GCodePathConfig& config,
+        const Polygon& wall,
+        int seam_vertex_idx,
+        coord_t line_width = 0);
 
     /*!
      * Write the planned paths to gcode

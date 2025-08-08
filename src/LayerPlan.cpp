@@ -47,6 +47,8 @@ constexpr int MINIMUM_LINE_LENGTH = 5; // in uM. Generated lines shorter than th
 constexpr int MINIMUM_SQUARED_LINE_LENGTH = MINIMUM_LINE_LENGTH * MINIMUM_LINE_LENGTH;
 
 
+
+
 GCodePath* LayerPlan::getLatestPathWithConfig(
     const GCodePathConfig& config,
     const SpaceFillType space_fill_type,
@@ -223,9 +225,16 @@ Shape LayerPlan::computeCombBoundary(const CombBoundary boundary_type)
                     }
                     else
                     {
-                        part_combing_boundary = part.outline.offset(offset);
+                        // 对于 CombingMode::ALL，使用外墙多边形而不是 part.outline
+                        if (combing_mode == CombingMode::ALL)
+                        {
+                            // 获取 retraction_combing_offset 参数
+                            coord_t combing_offset = mesh.settings.get<coord_t>("retraction_combing_offset");
 
-                        if (combing_mode == CombingMode::NO_SKIN) // Add the increased outline offset, subtract skin (infill and part of the inner walls)
+                            // 回退到使用 part.outline（向后兼容）
+                            part_combing_boundary = part.outline.offset(combing_offset);
+                        }
+                        else if (combing_mode == CombingMode::NO_SKIN) // Add the increased outline offset, subtract skin (infill and part of the inner walls)
                         {
                             part_combing_boundary = part_combing_boundary.difference(part.inner_area.difference(part.infill_area));
                         }
@@ -3113,6 +3122,60 @@ void LayerPlan::spiralizeWallSlice(
     }
 }
 
+void LayerPlan::spiralizeReinforcementContour(
+    const GCodePathConfig& config,
+    const Polygon& wall,
+    int seam_vertex_idx,
+    coord_t line_width)
+{
+    if (wall.size() < 3)
+    {
+        return; // 无效的多边形
+    }
+
+    spdlog::debug("【螺旋加强圈】开始打印加强圈，顶点数：{}，缝合点索引：{}，线宽：{}μm",
+                 wall.size(), seam_vertex_idx, line_width);
+
+    // 确保缝合点索引有效
+    if (seam_vertex_idx < 0 || seam_vertex_idx >= static_cast<int>(wall.size()))
+    {
+        seam_vertex_idx = 0;
+    }
+
+    // 移动到起始点
+    const Point2LL start_point = wall[seam_vertex_idx];
+    addTravel(start_point);
+
+    // 打印加强圈（不进行螺旋化，使用固定Z高度）
+    constexpr bool spiralize = false; // 加强圈不进行螺旋化
+    constexpr Ratio speed_factor = 1.0_r;
+
+    // 计算线宽系数和流量系数
+    Ratio width_factor = 1.0_r;
+    Ratio flow_ratio = 1.0_r;
+
+    if (line_width > 0 && config.getLineWidth() > 0)
+    {
+        // 根据实际线宽调整宽度系数
+        width_factor = Ratio(static_cast<double>(line_width) / config.getLineWidth());
+        // 流量也需要相应调整
+        //flow_ratio = width_factor;
+
+        spdlog::debug("【螺旋加强圈】线宽调整：目标{}μm，配置{}μm，系数{:.2f}",
+                     line_width, config.getLineWidth(), static_cast<double>(width_factor));
+    }
+
+    // 从缝合点开始，按顺序打印整个轮廓
+    const int n_points = wall.size();
+    for (int wall_point_idx = 1; wall_point_idx <= n_points; ++wall_point_idx)
+    {
+        const Point2LL& p = wall[(seam_vertex_idx + wall_point_idx) % n_points];
+        addExtrusionMove(p, config, SpaceFillType::Polygons, flow_ratio, width_factor, spiralize, speed_factor);
+    }
+
+    spdlog::debug("【螺旋加强圈】加强圈打印完成");
+}
+
 bool ExtruderPlan::forceMinimalLayerTime(double minTime, double time_other_extr_plans)
 {
     const double minimalSpeed = fan_speed_layer_time_settings_.cool_min_speed;
@@ -4162,6 +4225,101 @@ bool LayerPlan::getSkirtBrimIsPlanned(unsigned int extruder_nr) const
     return skirt_brim_is_processed_[extruder_nr];
 }
 
+std::vector<GCodePath> LayerPlan::createCombingTravel(const Point2LL& from_point, const Point2LL& to_point, coord_t layer_z, size_t extruder_nr)
+{
+    std::vector<GCodePath> travel_paths;
+
+    // 如果起点和终点相同，不需要移动
+    if (vSize2(to_point - from_point) < 100) // 0.1mm 容差
+    {
+        return travel_paths;
+    }
+
+    // 获取 travel 配置
+    const GCodePathConfig& travel_config = configs_storage_.travel_config_per_extruder[extruder_nr];
+
+    // 如果没有 comb 对象，创建简单的直线 travel
+    if (comb_ == nullptr)
+    {
+        GCodePath simple_travel;
+        simple_travel.config = travel_config;
+        simple_travel.mesh = nullptr;
+        simple_travel.space_fill_type = SpaceFillType::None;
+        simple_travel.speed_factor = 1.0_r;
+        simple_travel.speed_back_pressure_factor = 1.0_r;
+        simple_travel.retract = false;
+        simple_travel.unretract_before_last_travel_move = false;
+        simple_travel.perform_z_hop = false;
+        simple_travel.points.emplace_back(Point3LL(to_point.X, to_point.Y, layer_z));
+        travel_paths.push_back(simple_travel);
+        return travel_paths;
+    }
+
+    // 使用 combing 计算路径
+    CombPaths comb_paths;
+    bool was_inside = comb_boundary_preferred_.inside(from_point);
+    bool is_inside = comb_boundary_preferred_.inside(to_point);
+
+    const ExtruderTrain& extruder = Application::getInstance().current_slice_->scene.extruders[extruder_nr];
+    const Settings& mesh_or_extruder_settings = extruder.settings_;
+
+    bool unretract_before_last_travel_move = false;
+    const bool perform_z_hops = mesh_or_extruder_settings.get<bool>("retraction_hop_enabled");
+    const bool perform_z_hops_only_when_collides = mesh_or_extruder_settings.get<bool>("retraction_hop_only_when_collides");
+    const coord_t max_distance_ignored = mesh_or_extruder_settings.get<coord_t>("retraction_combing_max_distance");
+
+    bool combed = comb_->calc(
+        perform_z_hops,
+        perform_z_hops_only_when_collides,
+        extruder,
+        from_point,
+        to_point,
+        comb_paths,
+        was_inside,
+        is_inside,
+        max_distance_ignored,
+        unretract_before_last_travel_move);
+
+    if (combed && !comb_paths.empty())
+    {
+        // 使用 combing 路径
+        for (const CombPath& comb_path : comb_paths)
+        {
+            for (const Point2LL& point : comb_path)
+            {
+                GCodePath travel_segment;
+                travel_segment.config = travel_config;
+                travel_segment.mesh = nullptr;
+                travel_segment.space_fill_type = SpaceFillType::None;
+                travel_segment.speed_factor = 1.0_r;
+                travel_segment.speed_back_pressure_factor = 1.0_r;
+                travel_segment.retract = false;
+                travel_segment.unretract_before_last_travel_move = unretract_before_last_travel_move;
+                travel_segment.perform_z_hop = comb_paths.throughAir;
+                travel_segment.points.emplace_back(Point3LL(point.X, point.Y, layer_z));
+                travel_paths.push_back(travel_segment);
+            }
+        }
+    }
+    else
+    {
+        // combing 失败，使用直线路径
+        GCodePath simple_travel;
+        simple_travel.config = travel_config;
+        simple_travel.mesh = nullptr;
+        simple_travel.space_fill_type = SpaceFillType::None;
+        simple_travel.speed_factor = 1.0_r;
+        simple_travel.speed_back_pressure_factor = 1.0_r;
+        simple_travel.retract = false;
+        simple_travel.unretract_before_last_travel_move = false;
+        simple_travel.perform_z_hop = false;
+        simple_travel.points.emplace_back(Point3LL(to_point.X, to_point.Y, layer_z));
+        travel_paths.push_back(simple_travel);
+    }
+
+    return travel_paths;
+}
+
 void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_start_point)
 {
     // 只对非螺旋模式的层进行优化
@@ -4487,37 +4645,28 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         method1_paths.push_back(reversed_path1);
     }
 
-    // 添加travel到temp_extrusion_paths原终点
+    // 添加combing travel到temp_extrusion_paths原终点
     if (!temp_extrusion_paths.empty() && !temp_extrusion_paths[temp_extrusion_paths.size()-1].points.empty())
     {
-        Point2LL original_end = temp_extrusion_paths[temp_extrusion_paths.size()-1].points[0].toPoint2LL();
-        GCodePath travel_to_end;
-        travel_to_end.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-        travel_to_end.mesh = nullptr;
-        travel_to_end.space_fill_type = SpaceFillType::None;
-        travel_to_end.speed_factor = 1.0_r;
-        travel_to_end.speed_back_pressure_factor = 1.0_r;
-        travel_to_end.retract = false;
-        travel_to_end.unretract_before_last_travel_move = false;
-        travel_to_end.perform_z_hop = false;
-        travel_to_end.points.emplace_back(Point3LL(original_end.X, original_end.Y, layer_z));
-        method1_paths.push_back(travel_to_end);
-    }
-    // 添加travel到temp_extrusion_paths原终点
-    if (!temp_extrusion_paths.empty() && !temp_extrusion_paths[temp_extrusion_paths.size()-1].points.empty())
-    {
-        Point2LL original_end = temp_extrusion_paths[temp_extrusion_paths.size()-1].points[0].toPoint2LL();
-        GCodePath travel_to_end;
-        travel_to_end.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-        travel_to_end.mesh = nullptr;
-        travel_to_end.space_fill_type = SpaceFillType::None;
-        travel_to_end.speed_factor = 1.0_r;
-        travel_to_end.speed_back_pressure_factor = 1.0_r;
-        travel_to_end.retract = false;
-        travel_to_end.unretract_before_last_travel_move = false;
-        travel_to_end.perform_z_hop = false;
-        travel_to_end.points.emplace_back(Point3LL(original_end.X, original_end.Y, layer_z));
-        method1_paths.push_back(travel_to_end);
+        Point2LL original_end = temp_extrusion_paths[temp_extrusion_paths.size()-1].points.back().toPoint2LL();
+
+        // 获取当前位置（method1_paths的最后一个点）
+        Point2LL current_pos = optimal_point; // 默认从最优点开始
+        if (!method1_paths.empty())
+        {
+            const auto& last_path = method1_paths.back();
+            if (!last_path.points.empty())
+            {
+                current_pos = last_path.points.back().toPoint2LL();
+            }
+        }
+
+        // 使用combing创建travel路径
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, original_end, layer_z, getExtruder());
+        for (const auto& travel_path : combing_travels)
+        {
+            method1_paths.push_back(travel_path);
+        }
     }
 
     // 反向paths2并添加到method1
@@ -4574,21 +4723,28 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         method2_paths.push_back(path);
     }
 
-    // 添加travel到原起点
+    // 添加combing travel到原起点
     if (!temp_extrusion_paths.empty() && !temp_extrusion_paths[0].points.empty())
     {
         Point2LL original_start = temp_extrusion_paths[0].points[0].toPoint2LL();
-        GCodePath travel_to_start2;
-        travel_to_start2.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-        travel_to_start2.mesh = nullptr;
-        travel_to_start2.space_fill_type = SpaceFillType::None;
-        travel_to_start2.speed_factor = 1.0_r;
-        travel_to_start2.speed_back_pressure_factor = 1.0_r;
-        travel_to_start2.retract = false;
-        travel_to_start2.unretract_before_last_travel_move = false;
-        travel_to_start2.perform_z_hop = false;
-        travel_to_start2.points.emplace_back(Point3LL(original_start.X, original_start.Y, layer_z));
-        method2_paths.push_back(travel_to_start2);
+
+        // 获取当前位置（method2_paths的最后一个点）
+        Point2LL current_pos = optimal_point; // 默认从最优点开始
+        if (!method2_paths.empty())
+        {
+            const auto& last_path = method2_paths.back();
+            if (!last_path.points.empty())
+            {
+                current_pos = last_path.points.back().toPoint2LL();
+            }
+        }
+
+        // 使用combing创建travel路径
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, original_start, layer_z, getExtruder());
+        for (const auto& travel_path : combing_travels)
+        {
+            method2_paths.push_back(travel_path);
+        }
     }
 
     // 添加paths1到method2
@@ -4597,44 +4753,68 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         method2_paths.push_back(path);
     }
 
-    // 添加travel回到最优点
-    GCodePath travel_to_optimal2;
-    travel_to_optimal2.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-    travel_to_optimal2.mesh = nullptr;
-    travel_to_optimal2.space_fill_type = SpaceFillType::None;
-    travel_to_optimal2.speed_factor = 1.0_r;
-    travel_to_optimal2.speed_back_pressure_factor = 1.0_r;
-    travel_to_optimal2.retract = false;
-    travel_to_optimal2.unretract_before_last_travel_move = false;
-    travel_to_optimal2.perform_z_hop = false;
-    travel_to_optimal2.points.emplace_back(Point3LL(optimal_point.X, optimal_point.Y, layer_z));
-    method2_paths.push_back(travel_to_optimal2);
+    // 添加combing travel回到最优点
+    {
+        // 获取当前位置（method2_paths的最后一个点）
+        Point2LL current_pos = optimal_point; // 默认位置
+        if (!method2_paths.empty())
+        {
+            const auto& last_path = method2_paths.back();
+            if (!last_path.points.empty())
+            {
+                current_pos = last_path.points.back().toPoint2LL();
+            }
+        }
 
-    // 在method1_paths末尾添加到下一层起始点的travel
-    GCodePath travel_to_next_layer1;
-    travel_to_next_layer1.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-    travel_to_next_layer1.mesh = nullptr;
-    travel_to_next_layer1.space_fill_type = SpaceFillType::None;
-    travel_to_next_layer1.speed_factor = 1.0_r;
-    travel_to_next_layer1.speed_back_pressure_factor = 1.0_r;
-    travel_to_next_layer1.retract = false;
-    travel_to_next_layer1.unretract_before_last_travel_move = false;
-    travel_to_next_layer1.perform_z_hop = false;
-    travel_to_next_layer1.points.emplace_back(Point3LL(next_layer_start_point.X, next_layer_start_point.Y, layer_z));
-    method1_paths.push_back(travel_to_next_layer1);
+        // 使用combing创建travel路径
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, optimal_point, layer_z, getExtruder());
+        for (const auto& travel_path : combing_travels)
+        {
+            method2_paths.push_back(travel_path);
+        }
+    }
 
-    // 在method2_paths末尾添加到下一层起始点的travel
-    GCodePath travel_to_next_layer2;
-    travel_to_next_layer2.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-    travel_to_next_layer2.mesh = nullptr;
-    travel_to_next_layer2.space_fill_type = SpaceFillType::None;
-    travel_to_next_layer2.speed_factor = 1.0_r;
-    travel_to_next_layer2.speed_back_pressure_factor = 1.0_r;
-    travel_to_next_layer2.retract = false;
-    travel_to_next_layer2.unretract_before_last_travel_move = false;
-    travel_to_next_layer2.perform_z_hop = false;
-    travel_to_next_layer2.points.emplace_back(Point3LL(next_layer_start_point.X, next_layer_start_point.Y, layer_z));
-    method2_paths.push_back(travel_to_next_layer2);
+    // 在method1_paths末尾添加combing travel到下一层起始点
+    {
+        // 获取当前位置（method1_paths的最后一个点）
+        Point2LL current_pos = optimal_point; // 默认位置
+        if (!method1_paths.empty())
+        {
+            const auto& last_path = method1_paths.back();
+            if (!last_path.points.empty())
+            {
+                current_pos = last_path.points.back().toPoint2LL();
+            }
+        }
+
+        // 使用combing创建travel路径
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+        for (const auto& travel_path : combing_travels)
+        {
+            method1_paths.push_back(travel_path);
+        }
+    }
+
+    // 在method2_paths末尾添加combing travel到下一层起始点
+    {
+        // 获取当前位置（method2_paths的最后一个点）
+        Point2LL current_pos = optimal_point; // 默认位置
+        if (!method2_paths.empty())
+        {
+            const auto& last_path = method2_paths.back();
+            if (!last_path.points.empty())
+            {
+                current_pos = last_path.points.back().toPoint2LL();
+            }
+        }
+
+        // 使用combing创建travel路径
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+        for (const auto& travel_path : combing_travels)
+        {
+            method2_paths.push_back(travel_path);
+        }
+    }
 
     // === 步骤4：评分算法 ===
     auto calculateScore = [](const std::vector<GCodePath>& paths) -> double
@@ -4728,20 +4908,15 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
             }
         }
 
-        // 只有当起点不同时才添加travel
+        // 只有当起点不同时才添加combing travel
         if (vSize2(new_start - current_pos) > 100) // 0.1mm的容差
         {
-            GCodePath initial_travel;
-            initial_travel.config = configs_storage_.travel_config_per_extruder[getExtruder()];
-            initial_travel.mesh = nullptr;
-            initial_travel.space_fill_type = SpaceFillType::None;
-            initial_travel.speed_factor = 1.0_r;
-            initial_travel.speed_back_pressure_factor = 1.0_r;
-            initial_travel.retract = false;
-            initial_travel.unretract_before_last_travel_move = false;
-            initial_travel.perform_z_hop = false;
-            initial_travel.points.emplace_back(Point3LL(new_start.X, new_start.Y, layer_z));
-            last_extruder_plan.paths_.push_back(initial_travel);
+            // 使用combing创建travel路径
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, new_start, layer_z, getExtruder());
+            for (const auto& travel_path : combing_travels)
+            {
+                last_extruder_plan.paths_.push_back(travel_path);
+            }
         }
     }
 

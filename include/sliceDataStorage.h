@@ -64,6 +64,7 @@ public:
     Shape print_outline; //!< An approximation to the outline of what's actually printed, based on the outer wall.
                          //!< Too small parts will be omitted compared to the outline.
     Shape spiral_wall; //!< The centerline of the wall used by spiralize mode. Only computed if spiralize mode is enabled.
+    std::vector<coord_t> spiral_wall_width; //!< The width of each spiral wall contour. Corresponds to spiral_wall polygons.
     Shape inner_area; //!< The area of the outline, minus the walls. This will be filled with either skin or infill.
     std::vector<SkinPart> skin_parts; //!< The skin parts which are filled for 100% with lines and/or insets.
     std::vector<VariableWidthLines> wall_toolpaths; //!< toolpaths for walls, will replace(?) the insets. Binned by inset_idx.
