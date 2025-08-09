@@ -15,6 +15,7 @@
 #include "sliceDataStorage.h"
 #include "utils/ThreadPool.h"
 #include "utils/algorithm.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -256,7 +257,7 @@ void TreeModelVolumes::precalculate(coord_t max_layer)
     std::deque<RadiusLayerPair> relevant_hole_collision_radiis;
     for (RadiusLayerPair key : relevant_avoidance_radiis)
     {
-        spdlog::debug("Calculating avoidance of radius {} up to layer {}", key.first, key.second);
+        CURA_DEBUG(TREE_SUPPORT, "Calculating avoidance of radius {} up to layer {}", key.first, key.second);
         if (key.first < increase_until_radius_ + current_min_xy_dist_delta_)
         {
             relevant_hole_collision_radiis.emplace_back(key);
@@ -816,7 +817,7 @@ void TreeModelVolumes::calculateAccumulatedPlaceable0(const LayerIndex max_layer
     }
     if (start_layer > max_layer)
     {
-        spdlog::debug("Requested calculation for value already calculated ?");
+        CURA_DEBUG(TREE_SUPPORT, "Requested calculation for value already calculated ?");
         return;
     }
     Shape accumulated_placeable_0
@@ -953,7 +954,7 @@ void TreeModelVolumes::calculateAvoidance(const std::deque<RadiusLayerPair>& key
             }
             if (start_layer > max_required_layer)
             {
-                spdlog::debug("Requested calculation for value already calculated ?");
+                CURA_DEBUG(TREE_SUPPORT, "Requested calculation for value already calculated ?");
                 return;
             }
             start_layer = std::max(start_layer, LayerIndex(1)); // Ensure StartLayer is at least 1 as if no avoidance was calculated getMaxCalculatedLayer returns -1
@@ -1024,7 +1025,7 @@ void TreeModelVolumes::calculatePlaceables(const std::deque<RadiusLayerPair>& ke
             }
             if (start_layer > max_required_layer)
             {
-                spdlog::debug("Requested calculation for value already calculated ?");
+                CURA_DEBUG(TREE_SUPPORT, "Requested calculation for value already calculated ?");
                 return;
             }
 
@@ -1103,7 +1104,7 @@ void TreeModelVolumes::calculateAvoidanceToModel(const std::deque<RadiusLayerPai
             start_layer = std::max(start_layer, LayerIndex(1));
             if (start_layer > max_required_layer)
             {
-                spdlog::debug("Requested calculation for value already calculated or max_required_layer is 0?");
+                CURA_DEBUG(TREE_SUPPORT, "Requested calculation for value already calculated or max_required_layer is 0?");
                 return;
             }
             getPlaceableAreas(radius, max_required_layer); // ensuring Placeable Areas are calculated

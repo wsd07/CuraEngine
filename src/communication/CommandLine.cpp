@@ -31,6 +31,7 @@
 #include "utils/Matrix4x3D.h" //For the mesh_rotation_matrix setting.
 #include "utils/format/filesystem_path.h"
 #include "utils/views/split_paths.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -672,7 +673,7 @@ void CommandLine::loadJSONSettings(const rapidjson::Value& element, Settings& se
                 rapidjson::StringBuffer buffer;
                 rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
                 setting_object.Accept(writer);
-                spdlog::debug("JSON setting '{}': '{}'", name, buffer.GetString());
+                CURA_DEBUG(COMMUNICATION, "JSON setting '{}': '{}'", name, buffer.GetString());
             }
             continue;
         }

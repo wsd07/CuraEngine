@@ -25,6 +25,7 @@
 #include "settings/HeightParameterGraph.h"
 #include "settings/EnumSettings.h"
 #include "raft.h" // MMtoStream, PrecisionedDouble
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -1175,14 +1176,14 @@ void GCodeExport::writeFXYZE(
                 // 应用速度倍数
                 final_speed = speed * speed_multiplier;
 
-                spdlog::debug("用户定义速度控制: 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
+                CURA_DEBUG(GCODE_EXPORT, "用户定义速度控制: 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
                              INT2MM(model_height), static_cast<double>(speed), speed_ratio_percent, static_cast<double>(final_speed));
             }
         }
     }
     else if (is_first_layer)
     {
-        spdlog::debug("首层速度保护: Z={:.2f}mm, 使用原始速度={:.1f}mm/s", INT2MM(z), static_cast<double>(speed));
+        CURA_DEBUG(GCODE_EXPORT, "首层速度保护: Z={:.2f}mm, 使用原始速度={:.1f}mm/s", INT2MM(z), static_cast<double>(speed));
     }
 
     if (current_speed_ != final_speed)

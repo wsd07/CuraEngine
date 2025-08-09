@@ -7,7 +7,6 @@
 #include <spdlog/spdlog.h>
 #include <unordered_set>
 #include <string>
-#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -52,7 +51,7 @@ public:
         // === 设置和配置 ===
         SETTINGS,                   // 设置系统
         ADAPTIVE_LAYERS,            // 自适应层高
-        FLOW_COMPENSATION,          // 流量补偿（新功能）
+        FLOW_COMPENSATION,          // 流量补偿
         
         // === 输出生成 ===
         GCODE_GENERATION,           // G代码生成
@@ -140,31 +139,31 @@ private:
 #define CURA_DEBUG(category, ...) \
     do { \
         if (cura::DebugManager::getInstance().isCategoryEnabled(cura::DebugManager::Category::category)) { \
-            CURA_DEBUG(DEVELOPMENT, __VA_ARGS__); \
+            spdlog::debug(__VA_ARGS__); \
         } \
     } while(0)
 
 #define CURA_DEBUG_IF(category, condition, ...) \
     do { \
         if ((condition) && cura::DebugManager::getInstance().isCategoryEnabled(cura::DebugManager::Category::category)) { \
-            CURA_DEBUG(DEVELOPMENT, __VA_ARGS__); \
+            spdlog::debug(__VA_ARGS__); \
         } \
     } while(0)
 
 /*!
  * 信息级别输出（不受分类控制，用于重要的用户信息）
  */
-#define CURA_INFO(...) CURA_INFO(__VA_ARGS__)
+#define CURA_INFO(...) spdlog::info(__VA_ARGS__)
 
 /*!
  * 警告级别输出（不受分类控制，用于警告信息）
  */
-#define CURA_WARN(...) CURA_WARN(__VA_ARGS__)
+#define CURA_WARN(...) spdlog::warn(__VA_ARGS__)
 
 /*!
  * 错误级别输出（不受分类控制，用于错误信息）
  */
-#define CURA_ERROR(...) CURA_ERROR(__VA_ARGS__)
+#define CURA_ERROR(...) spdlog::error(__VA_ARGS__)
 
 } // namespace cura
 

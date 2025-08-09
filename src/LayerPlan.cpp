@@ -39,6 +39,7 @@
 #include "utils/math.h"
 #include "utils/polygonUtils.h"
 #include "utils/section_type.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -956,7 +957,7 @@ void LayerPlan::addSpiralTransitionWall(
     const double min_segment_length = 1.0; // 1mm的最小段长度
     const double target_segment_length = std::max(perimeter_1_percent, min_segment_length);
 
-    spdlog::debug("【螺旋过渡】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
+    CURA_DEBUG(LAYER_PLAN, "【螺旋过渡】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
                  perimeter_1_percent, min_segment_length, target_segment_length);
 
     // 生成细分后的点序列
@@ -985,7 +986,7 @@ void LayerPlan::addSpiralTransitionWall(
             // 计算需要细分的段数
             int num_segments = static_cast<int>(std::ceil(edge_length / target_segment_length));
 
-            spdlog::debug("【螺旋过渡】边{}-{}长度={:.2f}mm，细分为{}段",
+            CURA_DEBUG(LAYER_PLAN, "【螺旋过渡】边{}-{}长度={:.2f}mm，细分为{}段",
                          vertex_idx, next_vertex_idx, edge_length, num_segments);
 
             // 添加细分点
@@ -1121,7 +1122,7 @@ void LayerPlan::addSpiralEndingWall(
     const double min_segment_length = 1.0; // 1mm的最小段长度
     const double target_segment_length = std::max(perimeter_1_percent, min_segment_length);
 
-    spdlog::debug("【螺旋结束】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
+    CURA_DEBUG(LAYER_PLAN, "【螺旋结束】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
                  perimeter_1_percent, min_segment_length, target_segment_length);
 
     // 生成细分后的点序列
@@ -1150,7 +1151,7 @@ void LayerPlan::addSpiralEndingWall(
             // 计算需要细分的段数
             int num_segments = static_cast<int>(std::ceil(edge_length / target_segment_length));
 
-            spdlog::debug("【螺旋结束】边{}-{}长度={:.2f}mm，细分为{}段",
+            CURA_DEBUG(LAYER_PLAN, "【螺旋结束】边{}-{}长度={:.2f}mm，细分为{}段",
                          vertex_idx, next_vertex_idx, edge_length, num_segments);
 
             // 添加细分点
@@ -1224,7 +1225,7 @@ void LayerPlan::addSpiralEndingWall(
         if (i == 1 || i == subdivided_points.size() / 4 || i == subdivided_points.size() / 2 ||
             i == subdivided_points.size() * 3 / 4 || i == subdivided_points.size() - 1)
         {
-            spdlog::debug("【螺旋结束】点{}/{}, 进度={:.1f}%, 流量={:.3f}, Z偏移={:.3f}mm",
+            CURA_DEBUG(LAYER_PLAN, "【螺旋结束】点{}/{}, 进度={:.1f}%, 流量={:.3f}, Z偏移={:.3f}mm",
                          i, subdivided_points.size(), progress * 100.0, flow_ratio, INT2MM(z_offset));
         }
     }
@@ -2818,14 +2819,14 @@ void LayerPlan::sendLineTo(const GCodePath& path, const Point3LL& position, cons
                 // 应用速度倍数
                 final_extrude_speed = extrude_speed * speed_multiplier;
 
-                spdlog::debug("LayerPlan速度控制: 层{}, 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
+                CURA_DEBUG(LAYER_PLAN, "LayerPlan速度控制: 层{}, 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
                              layer_nr_, INT2MM(model_height), extrude_speed, speed_ratio_percent, final_extrude_speed);
             }
         }
     }
     else if (layer_nr_ == 0)
     {
-        spdlog::debug("首层速度保护: 层{}, 使用原始速度={:.1f}mm/s", layer_nr_, extrude_speed);
+        CURA_DEBUG(LAYER_PLAN, "首层速度保护: 层{}, 使用原始速度={:.1f}mm/s", layer_nr_, extrude_speed);
     }
 
     Application::getInstance().communication_->sendLineTo(
@@ -2933,11 +2934,11 @@ void LayerPlan::spiralizeWallSlice(
 
     if (!smooth_spiralized_z && smooth_contours_setting)
     {
-        spdlog::debug("【螺旋轮廓平滑】smooth_spiralized_z=false，强制禁用smooth_spiralized_contours");
+        CURA_DEBUG(LAYER_PLAN, "【螺旋轮廓平滑】smooth_spiralized_z=false，强制禁用smooth_spiralized_contours");
     }
     else if (smooth_spiralized_z)
     {
-        spdlog::debug("【螺旋轮廓平滑】smooth_spiralized_z=true，smooth_spiralized_contours={}", smooth_contours_setting ? "启用" : "禁用");
+        CURA_DEBUG(LAYER_PLAN, "【螺旋轮廓平滑】smooth_spiralized_z=true，smooth_spiralized_contours={}", smooth_contours_setting ? "启用" : "禁用");
     }
 
     constexpr bool spiralize = true; // In addExtrusionMove calls, enable spiralize and use nominal line width.
@@ -3113,12 +3114,12 @@ void LayerPlan::spiralizeWallSlice(
                 travel_to_z);
         }
 
-        spdlog::debug("【原有螺旋结束】使用原有的tapering spiral逻辑，距离={:.2f}mm", distance_coasted);
+        CURA_DEBUG(LAYER_PLAN, "【原有螺旋结束】使用原有的tapering spiral逻辑，距离={:.2f}mm", distance_coasted);
     }
     else if (is_top_layer && smooth_spiralized_z)
     {
         // 启用smooth_spiralized_z时，不在这里处理最高层，而是在processSpiralizedWall中使用addSpiralEndingWall
-        spdlog::debug("【新螺旋结束】启用smooth_spiralized_z，跳过原有tapering spiral，使用新的addSpiralEndingWall");
+        CURA_DEBUG(LAYER_PLAN, "【新螺旋结束】启用smooth_spiralized_z，跳过原有tapering spiral，使用新的addSpiralEndingWall");
     }
 }
 
@@ -3133,7 +3134,7 @@ void LayerPlan::spiralizeReinforcementContour(
         return; // 无效的多边形
     }
 
-    spdlog::debug("【螺旋加强圈】开始打印加强圈，顶点数：{}，缝合点索引：{}，线宽：{}μm",
+    CURA_DEBUG(LAYER_PLAN, "【螺旋加强圈】开始打印加强圈，顶点数：{}，缝合点索引：{}，线宽：{}μm",
                  wall.size(), seam_vertex_idx, line_width);
 
     // 确保缝合点索引有效
@@ -3161,7 +3162,7 @@ void LayerPlan::spiralizeReinforcementContour(
         // 流量也需要相应调整
         //flow_ratio = width_factor;
 
-        spdlog::debug("【螺旋加强圈】线宽调整：目标{}μm，配置{}μm，系数{:.2f}",
+        CURA_DEBUG(LAYER_PLAN, "【螺旋加强圈】线宽调整：目标{}μm，配置{}μm，系数{:.2f}",
                      line_width, config.getLineWidth(), static_cast<double>(width_factor));
     }
 
@@ -3173,7 +3174,7 @@ void LayerPlan::spiralizeReinforcementContour(
         addExtrusionMove(p, config, SpaceFillType::Polygons, flow_ratio, width_factor, spiralize, speed_factor);
     }
 
-    spdlog::debug("【螺旋加强圈】加强圈打印完成");
+    CURA_DEBUG(LAYER_PLAN, "【螺旋加强圈】加强圈打印完成");
 }
 
 bool ExtruderPlan::forceMinimalLayerTime(double minTime, double time_other_extr_plans)
@@ -3713,7 +3714,7 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
 
                 if (retraction_amounts.has_value() && retraction_amounts.value().segment_split_position.X == 352000)
                 {
-                    spdlog::debug("coucou");
+                    CURA_DEBUG(LAYER_PLAN, "coucou");
                     retraction_amounts.value().segment_split_position.X = 352000;
                 }
 
@@ -4348,13 +4349,13 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
 
     if (is_spiralize_mode)
     {
-        spdlog::debug("【层间优化】第{}层为螺旋模式，跳过层间路径优化", layer_nr_);
+        CURA_DEBUG(LAYER_PLAN, "【层间优化】第{}层为螺旋模式，跳过层间路径优化", layer_nr_);
         return;
     }
 
     if (extruder_plans_.empty())
     {
-        spdlog::debug("【层间优化】第{}层无挤出机计划，跳过层间路径优化", layer_nr_);
+        CURA_DEBUG(LAYER_PLAN, "【层间优化】第{}层无挤出机计划，跳过层间路径优化", layer_nr_);
         return;
     }
 
@@ -4362,7 +4363,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     ExtruderPlan& last_extruder_plan = extruder_plans_.back();
     if (last_extruder_plan.paths_.empty())
     {
-        spdlog::debug("【层间优化】第{}层最后挤出机计划无路径，跳过层间路径优化", layer_nr_);
+        CURA_DEBUG(LAYER_PLAN, "【层间优化】第{}层最后挤出机计划无路径，跳过层间路径优化", layer_nr_);
         return;
     }
 
@@ -4413,7 +4414,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
 
     if (temp_extrusion_paths.empty())
     {
-        spdlog::debug("【层间优化】第{}层未找到挤出路径，跳过层间路径优化", layer_nr_);
+        CURA_DEBUG(LAYER_PLAN, "【层间优化】第{}层未找到挤出路径，跳过层间路径优化", layer_nr_);
         return;
     }
 
@@ -4539,7 +4540,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         has_current_pos = true;
     }
 
-    spdlog::debug("【层间优化】找到最优点: ({:.2f}, {:.2f}), 距离={:.2f}mm, 路径索引={}, 需要拆分={}",
+    CURA_DEBUG(LAYER_PLAN, "【层间优化】找到最优点: ({:.2f}, {:.2f}), 距离={:.2f}mm, 路径索引={}, 需要拆分={}",
                  INT2MM(optimal_point.X), INT2MM(optimal_point.Y), INT2MM(std::sqrt(min_distance_squared)),
                  best_path_idx, split_needed);
 
@@ -4884,13 +4885,13 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     double score1 = calculateScore(method1_paths);
     double score2 = calculateScore(method2_paths);
 
-    spdlog::debug("【层间优化】方法1得分: {:.3f}, 方法2得分: {:.3f}", score1, score2);
+    CURA_DEBUG(LAYER_PLAN, "【层间优化】方法1得分: {:.3f}, 方法2得分: {:.3f}", score1, score2);
 
     // === 步骤5：选择最优方法并导入到last_extruder_plan ===
     std::vector<GCodePath>& chosen_paths = (score1 > score2) ? method1_paths : method2_paths;
     std::string chosen_method = (score1 > score2) ? "方法1" : "方法2";
 
-    spdlog::debug("【层间优化】选择{}, 开始导入路径", chosen_method);
+    CURA_DEBUG(LAYER_PLAN, "【层间优化】选择{}, 开始导入路径", chosen_method);
 
     // 添加travel到新路径的起点
     if (!chosen_paths.empty() && !chosen_paths[0].points.empty())
@@ -4929,9 +4930,9 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     // 更新last_planned_position_为新路径的终点（最优点）
     last_planned_position_ = optimal_point;
 
-    spdlog::debug("【层间优化】第{}层路径优化完成，添加了{}条路径，最终结束点: ({:.2f}, {:.2f})",
+    CURA_DEBUG(LAYER_PLAN, "【层间优化】第{}层路径优化完成，添加了{}条路径，最终结束点: ({:.2f}, {:.2f})",
                  layer_nr_, chosen_paths.size(), INT2MM(optimal_point.X), INT2MM(optimal_point.Y));
-    spdlog::debug("【层间优化】更新last_planned_position_为: ({:.2f}, {:.2f})",
+    CURA_DEBUG(LAYER_PLAN, "【层间优化】更新last_planned_position_为: ({:.2f}, {:.2f})",
                  INT2MM(last_planned_position_->X), INT2MM(last_planned_position_->Y));
 }
 

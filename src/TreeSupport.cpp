@@ -31,6 +31,7 @@
 #include "utils/math.h" //For round_up_divide and PI.
 #include "utils/polygonUtils.h" //For moveInside.
 #include "utils/section_type.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -689,7 +690,7 @@ std::optional<TreeSupportElement> TreeSupport::increaseSingleArea(
         if (! current_elem.to_buildplate_ && to_bp_data.area() > 1) // mostly happening in the tip, but with merges one should check every time, just to be sure.
         {
             current_elem.to_buildplate_ = true; // sometimes nodes that can reach the buildplate are marked as cant reach, tainting subtrees. This corrects it.
-            spdlog::debug("Corrected taint leading to a wrong to model value on layer {} targeting {} with radius {}", layer_idx - 1, current_elem.target_height_, radius);
+            CURA_DEBUG(TREE_SUPPORT, "Corrected taint leading to a wrong to model value on layer {} targeting {} with radius {}", layer_idx - 1, current_elem.target_height_, radius);
         }
     }
     if (config.support_rests_on_model)
@@ -704,7 +705,7 @@ std::optional<TreeSupportElement> TreeSupport::increaseSingleArea(
             if (mergelayer && to_model_data.area() >= 1)
             {
                 current_elem.to_model_gracious_ = true;
-                spdlog::debug("Corrected taint leading to a wrong non gracious value on layer {} targeting {} with radius {}", layer_idx - 1, current_elem.target_height_, radius);
+                CURA_DEBUG(TREE_SUPPORT, "Corrected taint leading to a wrong non gracious value on layer {} targeting {} with radius {}", layer_idx - 1, current_elem.target_height_, radius);
             }
             else
             {
@@ -1495,7 +1496,7 @@ bool TreeSupport::setToModelContact(std::vector<std::set<TreeSupportElement*>>& 
         }
 
         checked[last_successfull_layer - layer_idx]->result_on_layer_ = best;
-        spdlog::debug("Added gracious Support On Model Point ({},{}). The current layer is {}", best.X, best.Y, last_successfull_layer);
+        CURA_DEBUG(TREE_SUPPORT, "Added gracious Support On Model Point ({},{}). The current layer is {}", best.X, best.Y, last_successfull_layer);
 
         return last_successfull_layer != layer_idx;
     }
@@ -1540,7 +1541,7 @@ bool TreeSupport::setToModelContact(std::vector<std::set<TreeSupportElement*>>& 
         }
         first_elem->result_on_layer_ = best;
         first_elem->to_model_gracious_ = false;
-        spdlog::debug("Added NON gracious Support On Model Point ({},{}). The current layer is {}", best.X, best.Y, layer_idx);
+        CURA_DEBUG(TREE_SUPPORT, "Added NON gracious Support On Model Point ({},{}). The current layer is {}", best.X, best.Y, layer_idx);
         return false;
     }
 }
@@ -2136,7 +2137,7 @@ void TreeSupport::filterFloatingLines(std::vector<Shape>& support_layer_storage)
     const auto dur_hole_removal_tagging = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_hole_removal_tagging - t_hole_rest_ordering).count();
 
     const auto dur_hole_removal = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_hole_removal_tagging).count();
-    spdlog::debug(
+    CURA_DEBUG(TREE_SUPPORT, 
         "Time to union areas: {} ms Time to evaluate which hole rest on which other hole: {} ms Time to see which holes are not resting on anything valid: {} ms remove all holes "
         "that are invalid and not close enough to a valid hole: {} ms",
         dur_union,

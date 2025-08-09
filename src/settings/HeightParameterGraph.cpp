@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <spdlog/spdlog.h>
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -23,7 +24,7 @@ double HeightParameterGraph::getParameter(const coord_t height, const double def
     // 低于最低高度：使用最低点的参数值
     if (height < data_.front().height_)
     {
-        spdlog::debug("Height {:.2f}mm below minimum {:.2f}mm, using minimum parameter {}", 
+        CURA_DEBUG(SETTINGS, "Height {:.2f}mm below minimum {:.2f}mm, using minimum parameter {}", 
                      INT2MM(height), INT2MM(data_.front().height_), data_.front().parameter_);
         return data_.front().parameter_;
     }
@@ -41,7 +42,7 @@ double HeightParameterGraph::getParameter(const coord_t height, const double def
                 (height - last_datum->height_) / 
                 (datum.height_ - last_datum->height_);
             
-            spdlog::debug("Height {:.2f}mm interpolated between {:.2f}mm and {:.2f}mm, parameter: {}", 
+            CURA_DEBUG(SETTINGS, "Height {:.2f}mm interpolated between {:.2f}mm and {:.2f}mm, parameter: {}", 
                          INT2MM(height), INT2MM(last_datum->height_), INT2MM(datum.height_), interpolated_parameter);
             return interpolated_parameter;
         }
@@ -49,7 +50,7 @@ double HeightParameterGraph::getParameter(const coord_t height, const double def
     }
 
     // 高于最高高度：使用最高点的参数值
-    spdlog::debug("Height {:.2f}mm above maximum {:.2f}mm, using maximum parameter {}", 
+    CURA_DEBUG(SETTINGS, "Height {:.2f}mm above maximum {:.2f}mm, using maximum parameter {}", 
                  INT2MM(height), INT2MM(data_.back().height_), data_.back().parameter_);
     return data_.back().parameter_;
 }

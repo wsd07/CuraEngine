@@ -14,6 +14,7 @@
 #include "settings/types/Angle.h"
 #include "utils/Point3D.h"
 #include <spdlog/spdlog.h>
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -119,7 +120,7 @@ void AdaptiveLayerHeights::calculateLayersWithUserDefinedThickness(const coord_t
             {
                 z_level = model_max_z;
                 layer_thickness = adjusted_thickness;
-                spdlog::debug("调整最后一层厚度为 {:.3f}mm", INT2MM(layer_thickness));
+                CURA_DEBUG(ADAPTIVE_LAYERS, "调整最后一层厚度为 {:.3f}mm", INT2MM(layer_thickness));
             }
             else
             {
@@ -132,7 +133,7 @@ void AdaptiveLayerHeights::calculateLayersWithUserDefinedThickness(const coord_t
         adaptive_layer.z_position_ = z_level;
         layers_.push_back(adaptive_layer);
 
-        spdlog::debug("添加层: Z={:.2f}mm, 厚度={:.3f}mm",
+        CURA_DEBUG(ADAPTIVE_LAYERS, "添加层: Z={:.2f}mm, 厚度={:.3f}mm",
                      INT2MM(z_level), INT2MM(layer_thickness));
     }
 

@@ -14,6 +14,7 @@
 #include "settings/EnumSettings.h" //For EPlatformAdhesion.
 #include "sliceDataStorage.h"
 #include "utils/math.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -137,7 +138,7 @@ void Raft::generate(SliceDataStorage& storage)
             storage.raft_interface_outline = raft_interface_from_walls;
             storage.raft_surface_outline = raft_surface_from_walls;
 
-            spdlog::debug("Spiralize模式Raft优化完成：基于螺旋壁路径生成环形区域");
+            CURA_DEBUG(DEVELOPMENT, "Spiralize模式Raft优化完成：基于螺旋壁路径生成环形区域");
         }
         else
         {

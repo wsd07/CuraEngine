@@ -54,6 +54,7 @@
 #include "PrimeTower/PrimeTower.h"
 #include "geometry/OpenPolyline.h"
 #include "utils/Simplify.h"
+#include "utils/DebugManager.h"
 // clang-format on
 
 namespace cura
@@ -421,28 +422,28 @@ void FffPolygonGenerator::slices2polygons(SliceDataStorage& storage, TimeKeeper&
     // handle helpers
     storage.initializePrimeTower();
 
-    spdlog::debug("Processing ooze shield");
+    CURA_DEBUG(DEVELOPMENT, "Processing ooze shield");
     processOozeShield(storage);
 
-    spdlog::debug("Processing draft shield");
+    CURA_DEBUG(DEVELOPMENT, "Processing draft shield");
     processDraftShield(storage);
 
     // This catches a special case in which the models are in the air, and then
     // the adhesion mustn't be calculated.
     if (! isEmptyLayer(storage, 0) || storage.prime_tower_)
     {
-        spdlog::debug("Processing platform adhesion");
+        CURA_DEBUG(DEVELOPMENT, "Processing platform adhesion");
         processPlatformAdhesion(storage);
     }
 
-    spdlog::debug("Meshes post-processing");
+    CURA_DEBUG(DEVELOPMENT, "Meshes post-processing");
     // meshes post processing
     for (std::shared_ptr<SliceMeshStorage>& mesh : storage.meshes)
     {
         processDerivedWallsSkinInfill(*mesh);
     }
 
-    spdlog::debug("Processing gradual support");
+    CURA_DEBUG(DEVELOPMENT, "Processing gradual support");
     // generate gradual support
     AreaSupport::generateSupportInfillFeatures(storage);
 }
@@ -507,7 +508,7 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
         mesh_layer_count,
         [&](size_t layer_number)
         {
-            spdlog::debug("Processing insets for layer {} of {}", layer_number, mesh.layers.size());
+            CURA_DEBUG(DEVELOPMENT, "Processing insets for layer {} of {}", layer_number, mesh.layers.size());
             processWalls(mesh, layer_number);
             guarded_progress++;
         });
@@ -579,7 +580,7 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
         mesh_layer_count,
         [&](size_t layer_number)
         {
-            spdlog::debug("Processing skins and infill layer {} of {}", layer_number, mesh.layers.size());
+            CURA_DEBUG(DEVELOPMENT, "Processing skins and infill layer {} of {}", layer_number, mesh.layers.size());
 
             // 修改逻辑：当使用magic_spiralize_range时，为所有层生成skin和infill
             // 这样在后续处理时可以根据每层的实际需要选择使用螺旋或正常模式
@@ -1375,7 +1376,7 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
     // 如果两个阈值都为0或负数，则不进行筛选
     if (min_circumference <= 0 && min_area_um2 <= 0)
     {
-        spdlog::debug("跳过小图形筛选: 周长阈值={:.3f}mm, 面积阈值={:.3f}mm²",
+        CURA_DEBUG(DEVELOPMENT, "跳过小图形筛选: 周长阈值={:.3f}mm, 面积阈值={:.3f}mm²",
                      INT2MM(min_circumference), min_area_um2 / 1000000.0);
         return;
     }
@@ -1426,8 +1427,8 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
                 coord_t total_circumference = 0;
                 coord_t total_area = 0;
 
-                spdlog::debug("  图形[{}]: 开始分析最外层wall", part_index);
-                spdlog::debug("  图形[{}]: outline包含{}个多边形", part_index, part.outline.size());
+                CURA_DEBUG(DEVELOPMENT, "  图形[{}]: 开始分析最外层wall", part_index);
+                CURA_DEBUG(DEVELOPMENT, "  图形[{}]: outline包含{}个多边形", part_index, part.outline.size());
 
                 // 遍历part的所有outline多边形（最外层wall）
                 for (size_t poly_idx = 0; poly_idx < part.outline.size(); ++poly_idx)
@@ -1442,7 +1443,7 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
                     coord_t polygon_area = std::abs(static_cast<coord_t>(polygon.area()));
                     total_area += polygon_area;
 
-                    spdlog::debug("    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}",
+                    CURA_DEBUG(DEVELOPMENT, "    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}",
                                 poly_idx, INT2MM(polygon_circumference), INT2MM2(polygon_area), polygon.size());
                 }
 

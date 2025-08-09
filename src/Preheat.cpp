@@ -13,6 +13,7 @@
 #include "settings/types/Ratio.h"
 #include "settings/EnumSettings.h"
 #include "raft.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -62,14 +63,14 @@ Temperature Preheat::getTemp(const size_t extruder, const bool is_initial_layer,
         Temperature layer_0_temp = extruder_settings.get<Temperature>("material_print_temperature_layer_0");
         if (layer_0_temp != 0)
         {
-            spdlog::debug("首层温度保护: 使用layer_0温度 {:.0f}°C", static_cast<double>(layer_0_temp));
+            CURA_DEBUG(DEVELOPMENT, "首层温度保护: 使用layer_0温度 {:.0f}°C", static_cast<double>(layer_0_temp));
             return layer_0_temp;
         }
         else
         {
             // 如果没有设置layer_0温度，使用基础温度
             Temperature base_temp = extruder_settings.get<Temperature>("material_print_temperature");
-            spdlog::debug("首层温度保护: 使用基础温度 {:.0f}°C", static_cast<double>(base_temp));
+            CURA_DEBUG(DEVELOPMENT, "首层温度保护: 使用基础温度 {:.0f}°C", static_cast<double>(base_temp));
             return base_temp;
         }
     }
@@ -96,7 +97,7 @@ Temperature Preheat::getTemp(const size_t extruder, const bool is_initial_layer,
                 // 计算模型实体高度
                 model_height = layer_z - raft_total_thickness - raft_airgap;
 
-                spdlog::debug("Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型高度={:.2f}mm",
+                CURA_DEBUG(DEVELOPMENT, "Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型高度={:.2f}mm",
                              INT2MM(layer_z), INT2MM(raft_total_thickness), INT2MM(raft_airgap), INT2MM(model_height));
             }
 
@@ -104,7 +105,7 @@ Temperature Preheat::getTemp(const size_t extruder, const bool is_initial_layer,
             if (model_height < 0)
             {
                 Temperature base_temp = extruder_settings.get<Temperature>("material_print_temperature");
-                spdlog::debug("Raft层温度: 使用基础温度 {:.0f}°C", static_cast<double>(base_temp));
+                CURA_DEBUG(DEVELOPMENT, "Raft层温度: 使用基础温度 {:.0f}°C", static_cast<double>(base_temp));
                 return base_temp;
             }
 
@@ -114,7 +115,7 @@ Temperature Preheat::getTemp(const size_t extruder, const bool is_initial_layer,
             // 根据模型实体高度获取用户定义的温度
             double user_temp = user_temperature_definition.getParameter(model_height, base_temp);
 
-            spdlog::debug("用户定义温度控制: 模型高度={:.2f}mm, 温度={:.0f}°C", INT2MM(model_height), user_temp);
+            CURA_DEBUG(DEVELOPMENT, "用户定义温度控制: 模型高度={:.2f}mm, 温度={:.0f}°C", INT2MM(model_height), user_temp);
             return Temperature(user_temp);
         }
     }

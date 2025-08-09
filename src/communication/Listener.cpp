@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "communication/Listener.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -25,7 +26,7 @@ void Listener::error(const Arcus::Error& error)
 {
     if (error.getErrorCode() == Arcus::ErrorCode::Debug)
     {
-        spdlog::debug("{}", error.getErrorMessage());
+        CURA_DEBUG(COMMUNICATION, "{}", error.getErrorMessage());
     }
     else
     {

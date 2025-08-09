@@ -23,6 +23,7 @@
 #include "utils/algorithm.h"
 #include "utils/math.h" //For round_up_divide and PI.
 #include "utils/polygonUtils.h" //For moveInside.
+#include "utils/DebugManager.h"
 
 
 namespace cura
@@ -1120,7 +1121,7 @@ void TreeSupportTipGenerator::generateTips(
 
                     if (! overhang_lines.empty())
                     {
-                        spdlog::debug("Compensated for overhang area that had no valid tips. Now has a tip.");
+                        CURA_DEBUG(TREE_SUPPORT, "Compensated for overhang area that had no valid tips. Now has a tip.");
                     }
                     else
                     {

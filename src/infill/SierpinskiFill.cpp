@@ -15,6 +15,7 @@
 #include "infill/UniformDensityProvider.h"
 #include "utils/AABB3D.h"
 #include "utils/SVG.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -178,7 +179,7 @@ void SierpinskiFill::createLowerBoundSequence()
 
         if (! change)
         {
-            spdlog::debug("Finished after {} iterations, with a max depth of {}.", iteration + 1, max_depth_);
+            CURA_DEBUG(INFILL, "Finished after {} iterations, with a max depth of {}.", iteration + 1, max_depth_);
             break;
         }
     }
@@ -581,7 +582,7 @@ void SierpinskiFill::diffuseError()
                 error += nodal_value - triangle.realized_length_;
         }
     }
-    spdlog::debug(
+    CURA_DEBUG(INFILL, 
         "pair_constrained_nodes: {}, constrained_nodes: {}, unconstrained_nodes: {}, subdivided_nodes: {}",
         pair_constrained_nodes,
         constrained_nodes,
@@ -724,7 +725,7 @@ Polygon SierpinskiFill::generateCross() const
     double realized_length = INT2MM(ret.length());
     double requested_length = root_.requested_length_;
     double error = (realized_length - requested_length) / requested_length;
-    spdlog::debug("realized_length: {}, requested_length: {}  :: {}% error", realized_length, requested_length, 0.01 * static_cast<int>(10000 * error));
+    CURA_DEBUG(INFILL, "realized_length: {}, requested_length: {}  :: {}% error", realized_length, requested_length, 0.01 * static_cast<int>(10000 * error));
     return ret;
 }
 

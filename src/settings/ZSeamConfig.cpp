@@ -6,6 +6,7 @@
 #include <optional>
 #include <spdlog/spdlog.h>
 #include "utils/math.h" // For INT2MM
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -26,16 +27,16 @@ ZSeamConfig::ZSeamConfig(const EZSeamType type, const Point2LL pos, const EZSeam
     // 添加调试日志（使用debug级别避免过多输出）
     if (draw_z_seam_enable_)
     {
-        spdlog::debug("ZSeamConfig创建: 自定义Z接缝点功能已启用");
-        spdlog::debug("接缝点数量: {}", draw_z_seam_points_.size());
-        spdlog::debug("插值模式: {}", z_seam_point_interpolation_ ? "启用" : "禁用");
-        spdlog::debug("超出范围处理: {}", draw_z_seam_grow_ ? "使用默认" : "使用边界点");
-        spdlog::debug("当前层Z坐标: {:.2f}mm", INT2MM(current_layer_z_));
+        CURA_DEBUG(SEAM_PLACEMENT, "ZSeamConfig创建: 自定义Z接缝点功能已启用");
+        CURA_DEBUG(SEAM_PLACEMENT, "接缝点数量: {}", draw_z_seam_points_.size());
+        CURA_DEBUG(SEAM_PLACEMENT, "插值模式: {}", z_seam_point_interpolation_ ? "启用" : "禁用");
+        CURA_DEBUG(SEAM_PLACEMENT, "超出范围处理: {}", draw_z_seam_grow_ ? "使用默认" : "使用边界点");
+        CURA_DEBUG(SEAM_PLACEMENT, "当前层Z坐标: {:.2f}mm", INT2MM(current_layer_z_));
 
         for (size_t i = 0; i < draw_z_seam_points_.size(); ++i)
         {
             const auto& point = draw_z_seam_points_[i];
-            spdlog::debug("接缝点[{}]: ({:.2f}, {:.2f}, {:.2f})",
+            CURA_DEBUG(SEAM_PLACEMENT, "接缝点[{}]: ({:.2f}, {:.2f}, {:.2f})",
                         i, INT2MM(point.x_), INT2MM(point.y_), INT2MM(point.z_));
         }
     }
@@ -46,7 +47,7 @@ std::optional<Point2LL> ZSeamConfig::getInterpolatedSeamPosition() const
     // 检查前置条件：功能是否启用且有有效的接缝点数据
     if (!draw_z_seam_enable_ || draw_z_seam_points_.empty())
     {
-        spdlog::debug("自定义Z接缝点未启用或点列表为空，启用状态: {}, 点数量: {}",
+        CURA_DEBUG(SEAM_PLACEMENT, "自定义Z接缝点未启用或点列表为空，启用状态: {}, 点数量: {}",
                      draw_z_seam_enable_, draw_z_seam_points_.size());
         return std::nullopt;  // 返回空值，表示不使用自定义接缝点
     }
@@ -60,7 +61,7 @@ std::optional<Point2LL> ZSeamConfig::getInterpolatedSeamPosition() const
     if (draw_z_seam_points_.size() == 1)
     {
         Point2LL result(draw_z_seam_points_[0].x_, draw_z_seam_points_[0].y_);
-        spdlog::debug("只有一个接缝点，返回: ({:.2f}, {:.2f})", INT2MM(result.X), INT2MM(result.Y));
+        CURA_DEBUG(SEAM_PLACEMENT, "只有一个接缝点，返回: ({:.2f}, {:.2f})", INT2MM(result.X), INT2MM(result.Y));
         return result;
     }
 

@@ -1,0 +1,1551 @@
+{
+  "version": "1.0",
+  "start_time": "2025-08-09T21:50:35.633844",
+  "modifications": [
+    {
+      "filepath": "src/mesh.cpp",
+      "timestamp": "2025-08-09T21:50:35.634863",
+      "category": "MESH_PROCESSING",
+      "original_hash": "8d00ec8f10ac34e82d57ba2622cdf3fa",
+      "new_hash": "8b3c3b535a976fce09a1068df154febb",
+      "backup_path": "refactor_backups/src/mesh.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Couldn't find face connected to face {}\", notFaceIdx);",
+          "new": "CURA_DEBUG(MESH_PROCESSING, \"Couldn't find face connected to face {}\", notFaceIdx);",
+          "level": "debug",
+          "category": "MESH_PROCESSING",
+          "message": "Couldn't find face connected to face {}",
+          "line_number": 184
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Edge with uneven number of faces connecting it!({})\\n\", candidateFaces.size() + 1);",
+          "new": "CURA_DEBUG(MESH_PROCESSING, \"Edge with uneven number of faces connecting it!({})\\n\", candidateFaces.size() + 1);",
+          "level": "debug",
+          "category": "MESH_PROCESSING",
+          "message": "Edge with uneven number of faces connecting it!({})\\n",
+          "line_number": 200
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Face {} has zero area!\", notFaceIdx);",
+          "new": "CURA_DEBUG(MESH_PROCESSING, \"Face {} has zero area!\", notFaceIdx);",
+          "level": "debug",
+          "category": "MESH_PROCESSING",
+          "message": "Face {} has zero area!",
+          "line_number": 217
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Overlapping faces: face {} and face {}.\", notFaceIdx, candidateFace);",
+          "new": "CURA_DEBUG(MESH_PROCESSING, \"Overlapping faces: face {} and face {}.\", notFaceIdx, candidateFace);",
+          "level": "debug",
+          "category": "MESH_PROCESSING",
+          "message": "Overlapping faces: face {} and face {}.",
+          "line_number": 243
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Couldn't find face connected to face {}.\", notFaceIdx);",
+          "new": "CURA_DEBUG(MESH_PROCESSING, \"Couldn't find face connected to face {}.\", notFaceIdx);",
+          "level": "debug",
+          "category": "MESH_PROCESSING",
+          "message": "Couldn't find face connected to face {}.",
+          "line_number": 258
+        },
+        {
+          "type": "include_addition",
+          "line_number": 11,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 6
+    },
+    {
+      "filepath": "src/SkeletalTrapezoidation.cpp",
+      "timestamp": "2025-08-09T21:51:42.961423",
+      "category": "SKELETAL_TRAPEZOIDATION",
+      "original_hash": "e1f7b955d6f750b24e6e881779add69f",
+      "new_hash": "5bdc64ec81585993a26844174184c57b",
+      "backup_path": "refactor_backups/src/SkeletalTrapezoidation.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"There must have been at least one direction in which the bead count is increasing enough for the transition to happen!\");",
+          "new": "CURA_DEBUG(SKELETAL_TRAPEZOIDATION, \"There must have been at least one direction in which the bead count is increasing enough for the transition to happen!\");",
+          "level": "debug",
+          "category": "SKELETAL_TRAPEZOIDATION",
+          "message": "There must have been at least one direction in which the bead count is increasing enough for the transition to happen!",
+          "line_number": 1241
+        },
+        {
+          "type": "include_addition",
+          "line_number": 21,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 2
+    },
+    {
+      "filepath": "src/WallsComputation.cpp",
+      "timestamp": "2025-08-09T21:51:42.962553",
+      "category": "WALL_COMPUTATION",
+      "original_hash": "e3206066e5d31393afff07234295d1f5",
+      "new_hash": "69ed4a0c382ce2ba51eeb3c3944d28af",
+      "backup_path": "refactor_backups/src/WallsComputation.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"generateSpiralInsets: only_spiralize_out_surface={}, 多边形数量={}\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"generateSpiralInsets: only_spiralize_out_surface={}, 多边形数量={}\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "generateSpiralInsets: only_spiralize_out_surface={}, 多边形数量={}",
+          "line_number": 204
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== only_spiralize_out_surface功能启用 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== only_spiralize_out_surface功能启用 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== only_spiralize_out_surface功能启用 ===",
+          "line_number": 213
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"原始多边形数量: {}\", spiral_outline.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"原始多边形数量: {}\", spiral_outline.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "原始多边形数量: {}",
+          "line_number": 214
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"多边形[{}]: 面积={:.2f}mm², 顶点数={}\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"多边形[{}]: 面积={:.2f}mm², 顶点数={}\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "多边形[{}]: 面积={:.2f}mm², 顶点数={}",
+          "line_number": 232
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"保留最外层多边形[{}]: 面积={:.2f}mm², 顶点数={}\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"保留最外层多边形[{}]: 面积={:.2f}mm², 顶点数={}\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "保留最外层多边形[{}]: 面积={:.2f}mm², 顶点数={}",
+          "line_number": 250
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"过滤后多边形数量: {}\", spiral_outline.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"过滤后多边形数量: {}\", spiral_outline.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "过滤后多边形数量: {}",
+          "line_number": 252
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋加强】最内圈（可变），偏移{}μm，宽度{}μm（{:.2f}倍wall_0）\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"【螺旋加强】最内圈（可变），偏移{}μm，宽度{}μm（{:.2f}倍wall_0）\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "【螺旋加强】最内圈（可变），偏移{}μm，宽度{}μm（{:.2f}倍wall_0）",
+          "line_number": 363
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋加强】外圈{}（固定），偏移{}μm，宽度{}μm（1.0倍wall_0）\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"【螺旋加强】外圈{}（固定），偏移{}μm，宽度{}μm（1.0倍wall_0）\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "【螺旋加强】外圈{}（固定），偏移{}μm，宽度{}μm（1.0倍wall_0）",
+          "line_number": 371
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式插值Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型Z={:.2f}mm\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式插值Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型Z={:.2f}mm\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式插值Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型Z={:.2f}mm",
+          "line_number": 563
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式插值无Raft结构，模型Z={:.2f}mm（等于层Z）\", INT2MM(model_z));",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式插值无Raft结构，模型Z={:.2f}mm（等于层Z）\", INT2MM(model_z));",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式插值无Raft结构，模型Z={:.2f}mm（等于层Z）",
+          "line_number": 568
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式插值处理: 层Z={:.2f}mm, 模型Z={:.2f}mm, 多边形顶点数={}\", INT2MM(layer_z), INT2MM(model_z), polygon.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式插值处理: 层Z={:.2f}mm, 模型Z={:.2f}mm, 多边形顶点数={}\", INT2MM(layer_z), INT2MM(model_z), polygon.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式插值处理: 层Z={:.2f}mm, 模型Z={:.2f}mm, 多边形顶点数={}",
+          "line_number": 571
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式插值计算失败，返回原多边形\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式插值计算失败，返回原多边形\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式插值计算失败，返回原多边形",
+          "line_number": 585
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式多边形顶点数不足，返回原多边形\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式多边形顶点数不足，返回原多边形\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式多边形顶点数不足，返回原多边形",
+          "line_number": 596
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式在索引{}插入新点: ({:.2f}, {:.2f})\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式在索引{}插入新点: ({:.2f}, {:.2f})\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式在索引{}插入新点: ({:.2f}, {:.2f})",
+          "line_number": 646
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式多边形顶点数: {} -> {}\", polygon.size(), result_polygon.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式多边形顶点数: {} -> {}\", polygon.size(), result_polygon.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式多边形顶点数: {} -> {}",
+          "line_number": 648
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"螺旋模式最近点是现有顶点，无需插入新点\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"螺旋模式最近点是现有顶点，无需插入新点\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "螺旋模式最近点是现有顶点，无需插入新点",
+          "line_number": 654
+        },
+        {
+          "type": "include_addition",
+          "line_number": 28,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 17
+    },
+    {
+      "filepath": "src/TreeSupport.cpp",
+      "timestamp": "2025-08-09T21:52:15.093496",
+      "category": "TREE_SUPPORT",
+      "original_hash": "9b32bcb47cf6e70add7ced9376b4bc2d",
+      "new_hash": "80fd5670d91c8b820a89e6ce63fe6dfa",
+      "backup_path": "refactor_backups/src/TreeSupport.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Corrected taint leading to a wrong to model value on layer {} targeting {} with radius {}\", layer_idx - 1, current_elem.target_height_, radius);",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Corrected taint leading to a wrong to model value on layer {} targeting {} with radius {}\", layer_idx - 1, current_elem.target_height_, radius);",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Corrected taint leading to a wrong to model value on layer {} targeting {} with radius {}",
+          "line_number": 692
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Corrected taint leading to a wrong non gracious value on layer {} targeting {} with radius {}\", layer_idx - 1, current_elem.target_height_, radius);",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Corrected taint leading to a wrong non gracious value on layer {} targeting {} with radius {}\", layer_idx - 1, current_elem.target_height_, radius);",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Corrected taint leading to a wrong non gracious value on layer {} targeting {} with radius {}",
+          "line_number": 707
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Added gracious Support On Model Point ({},{}). The current layer is {}\", best.X, best.Y, last_successfull_layer);",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Added gracious Support On Model Point ({},{}). The current layer is {}\", best.X, best.Y, last_successfull_layer);",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Added gracious Support On Model Point ({},{}). The current layer is {}",
+          "line_number": 1498
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Added NON gracious Support On Model Point ({},{}). The current layer is {}\", best.X, best.Y, layer_idx);",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Added NON gracious Support On Model Point ({},{}). The current layer is {}\", best.X, best.Y, layer_idx);",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Added NON gracious Support On Model Point ({},{}). The current layer is {}",
+          "line_number": 1543
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(",
+          "new": "CURA_DEBUG(TREE_SUPPORT,",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "",
+          "line_number": 2139
+        },
+        {
+          "type": "include_addition",
+          "line_number": 34,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 6
+    },
+    {
+      "filepath": "src/raft.cpp",
+      "timestamp": "2025-08-09T21:52:15.094629",
+      "category": "DEVELOPMENT",
+      "original_hash": "a7993d317ec0dac622bab7c8624543ee",
+      "new_hash": "5f8469b11730529ccd1782190cba7791",
+      "backup_path": "refactor_backups/src/raft.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Spiralize模式Raft优化完成：基于螺旋壁路径生成环形区域\");",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Spiralize模式Raft优化完成：基于螺旋壁路径生成环形区域\");",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Spiralize模式Raft优化完成：基于螺旋壁路径生成环形区域",
+          "line_number": 140
+        },
+        {
+          "type": "include_addition",
+          "line_number": 17,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 2
+    },
+    {
+      "filepath": "src/LayerPlan.cpp",
+      "timestamp": "2025-08-09T21:52:15.099871",
+      "category": "LAYER_PLAN",
+      "original_hash": "8e36920352b3b501e869e19988c910e3",
+      "new_hash": "c70ca09678ec123e4531f9d1d5b068d2",
+      "backup_path": "refactor_backups/src/LayerPlan.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋过渡】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋过渡】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋过渡】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
+          "line_number": 959
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋过渡】边{}-{}长度={:.2f}mm，细分为{}段\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋过渡】边{}-{}长度={:.2f}mm，细分为{}段\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋过渡】边{}-{}长度={:.2f}mm，细分为{}段",
+          "line_number": 988
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋结束】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋结束】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋结束】切分参数：周长1%={:.2f}mm，最小段长={:.2f}mm，目标段长={:.2f}mm",
+          "line_number": 1124
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋结束】边{}-{}长度={:.2f}mm，细分为{}段\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋结束】边{}-{}长度={:.2f}mm，细分为{}段\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋结束】边{}-{}长度={:.2f}mm，细分为{}段",
+          "line_number": 1153
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋结束】点{}/{}, 进度={:.1f}%, 流量={:.3f}, Z偏移={:.3f}mm\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋结束】点{}/{}, 进度={:.1f}%, 流量={:.3f}, Z偏移={:.3f}mm\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋结束】点{}/{}, 进度={:.1f}%, 流量={:.3f}, Z偏移={:.3f}mm",
+          "line_number": 1227
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"LayerPlan速度控制: 层{}, 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"LayerPlan速度控制: 层{}, 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "LayerPlan速度控制: 层{}, 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
+          "line_number": 2821
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"首层速度保护: 层{}, 使用原始速度={:.1f}mm/s\", layer_nr_, extrude_speed);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"首层速度保护: 层{}, 使用原始速度={:.1f}mm/s\", layer_nr_, extrude_speed);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "首层速度保护: 层{}, 使用原始速度={:.1f}mm/s",
+          "line_number": 2828
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋轮廓平滑】smooth_spiralized_z=false，强制禁用smooth_spiralized_contours\");",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋轮廓平滑】smooth_spiralized_z=false，强制禁用smooth_spiralized_contours\");",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋轮廓平滑】smooth_spiralized_z=false，强制禁用smooth_spiralized_contours",
+          "line_number": 2936
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋轮廓平滑】smooth_spiralized_z=true，smooth_spiralized_contours={}\", smooth_contours_setting ? \"启用\" : \"禁用\");",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋轮廓平滑】smooth_spiralized_z=true，smooth_spiralized_contours={}\", smooth_contours_setting ? \"启用\" : \"禁用\");",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋轮廓平滑】smooth_spiralized_z=true，smooth_spiralized_contours={}",
+          "line_number": 2940
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【原有螺旋结束】使用原有的tapering spiral逻辑，距离={:.2f}mm\", distance_coasted);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【原有螺旋结束】使用原有的tapering spiral逻辑，距离={:.2f}mm\", distance_coasted);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【原有螺旋结束】使用原有的tapering spiral逻辑，距离={:.2f}mm",
+          "line_number": 3116
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【新螺旋结束】启用smooth_spiralized_z，跳过原有tapering spiral，使用新的addSpiralEndingWall\");",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【新螺旋结束】启用smooth_spiralized_z，跳过原有tapering spiral，使用新的addSpiralEndingWall\");",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【新螺旋结束】启用smooth_spiralized_z，跳过原有tapering spiral，使用新的addSpiralEndingWall",
+          "line_number": 3121
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋加强圈】开始打印加强圈，顶点数：{}，缝合点索引：{}，线宽：{}μm\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋加强圈】开始打印加强圈，顶点数：{}，缝合点索引：{}，线宽：{}μm\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋加强圈】开始打印加强圈，顶点数：{}，缝合点索引：{}，线宽：{}μm",
+          "line_number": 3136
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋加强圈】线宽调整：目标{}μm，配置{}μm，系数{:.2f}\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋加强圈】线宽调整：目标{}μm，配置{}μm，系数{:.2f}\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋加强圈】线宽调整：目标{}μm，配置{}μm，系数{:.2f}",
+          "line_number": 3164
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【螺旋加强圈】加强圈打印完成\");",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【螺旋加强圈】加强圈打印完成\");",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【螺旋加强圈】加强圈打印完成",
+          "line_number": 3176
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"coucou\");",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"coucou\");",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "coucou",
+          "line_number": 3716
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】第{}层为螺旋模式，跳过层间路径优化\", layer_nr_);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】第{}层为螺旋模式，跳过层间路径优化\", layer_nr_);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】第{}层为螺旋模式，跳过层间路径优化",
+          "line_number": 4351
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】第{}层无挤出机计划，跳过层间路径优化\", layer_nr_);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】第{}层无挤出机计划，跳过层间路径优化\", layer_nr_);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】第{}层无挤出机计划，跳过层间路径优化",
+          "line_number": 4357
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】第{}层最后挤出机计划无路径，跳过层间路径优化\", layer_nr_);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】第{}层最后挤出机计划无路径，跳过层间路径优化\", layer_nr_);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】第{}层最后挤出机计划无路径，跳过层间路径优化",
+          "line_number": 4365
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】第{}层未找到挤出路径，跳过层间路径优化\", layer_nr_);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】第{}层未找到挤出路径，跳过层间路径优化\", layer_nr_);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】第{}层未找到挤出路径，跳过层间路径优化",
+          "line_number": 4416
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】找到最优点: ({:.2f}, {:.2f}), 距离={:.2f}mm, 路径索引={}, 需要拆分={}\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】找到最优点: ({:.2f}, {:.2f}), 距离={:.2f}mm, 路径索引={}, 需要拆分={}\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】找到最优点: ({:.2f}, {:.2f}), 距离={:.2f}mm, 路径索引={}, 需要拆分={}",
+          "line_number": 4542
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】方法1得分: {:.3f}, 方法2得分: {:.3f}\", score1, score2);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】方法1得分: {:.3f}, 方法2得分: {:.3f}\", score1, score2);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】方法1得分: {:.3f}, 方法2得分: {:.3f}",
+          "line_number": 4887
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】选择{}, 开始导入路径\", chosen_method);",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】选择{}, 开始导入路径\", chosen_method);",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】选择{}, 开始导入路径",
+          "line_number": 4893
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】第{}层路径优化完成，添加了{}条路径，最终结束点: ({:.2f}, {:.2f})\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】第{}层路径优化完成，添加了{}条路径，最终结束点: ({:.2f}, {:.2f})\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】第{}层路径优化完成，添加了{}条路径，最终结束点: ({:.2f}, {:.2f})",
+          "line_number": 4932
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"【层间优化】更新last_planned_position_为: ({:.2f}, {:.2f})\",",
+          "new": "CURA_DEBUG(LAYER_PLAN, \"【层间优化】更新last_planned_position_为: ({:.2f}, {:.2f})\",",
+          "level": "debug",
+          "category": "LAYER_PLAN",
+          "message": "【层间优化】更新last_planned_position_为: ({:.2f}, {:.2f})",
+          "line_number": 4934
+        },
+        {
+          "type": "include_addition",
+          "line_number": 42,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 25
+    },
+    {
+      "filepath": "src/gcodeExport.cpp",
+      "timestamp": "2025-08-09T21:52:15.101646",
+      "category": "GCODE_EXPORT",
+      "original_hash": "64a78868d204e52ae9f9dac3bff13054",
+      "new_hash": "29569b2cfdf7801796d8be469496eae2",
+      "backup_path": "refactor_backups/src/gcodeExport.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"用户定义速度控制: 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s\",",
+          "new": "CURA_DEBUG(GCODE_EXPORT, \"用户定义速度控制: 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s\",",
+          "level": "debug",
+          "category": "GCODE_EXPORT",
+          "message": "用户定义速度控制: 模型高度={:.2f}mm, 原速度={:.1f}mm/s, 比例={:.1f}%, 最终速度={:.1f}mm/s",
+          "line_number": 1178
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"首层速度保护: Z={:.2f}mm, 使用原始速度={:.1f}mm/s\", INT2MM(z), static_cast<double>(speed));",
+          "new": "CURA_DEBUG(GCODE_EXPORT, \"首层速度保护: Z={:.2f}mm, 使用原始速度={:.1f}mm/s\", INT2MM(z), static_cast<double>(speed));",
+          "level": "debug",
+          "category": "GCODE_EXPORT",
+          "message": "首层速度保护: Z={:.2f}mm, 使用原始速度={:.1f}mm/s",
+          "line_number": 1185
+        },
+        {
+          "type": "include_addition",
+          "line_number": 28,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 3
+    },
+    {
+      "filepath": "src/WallToolPaths.cpp",
+      "timestamp": "2025-08-09T21:52:15.104206",
+      "category": "WALL_COMPUTATION",
+      "original_hash": "941ce2545aa2fca069508780921b3e2b",
+      "new_hash": "42b4731d559ff36f95af20c79516c66f",
+      "backup_path": "refactor_backups/src/WallToolPaths.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== 开始Z接缝点预处理插值 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== 开始Z接缝点预处理插值 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== 开始Z接缝点预处理插值 ===",
+          "line_number": 132
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"使用传入的层Z坐标: {:.2f}mm（支持可变层厚）\", INT2MM(layer_z));",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"使用传入的层Z坐标: {:.2f}mm（支持可变层厚）\", INT2MM(layer_z));",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "使用传入的层Z坐标: {:.2f}mm（支持可变层厚）",
+          "line_number": 140
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"使用简单计算的层Z坐标: {:.2f}mm（固定层厚模式）\", INT2MM(layer_z));",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"使用简单计算的层Z坐标: {:.2f}mm（固定层厚模式）\", INT2MM(layer_z));",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "使用简单计算的层Z坐标: {:.2f}mm（固定层厚模式）",
+          "line_number": 146
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Z接缝点预处理完成，处理了{}个多边形\", prepared_outline.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"Z接缝点预处理完成，处理了{}个多边形\", prepared_outline.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "Z接缝点预处理完成，处理了{}个多边形",
+          "line_number": 156
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== 使用传统简单偏移算法 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== 使用传统简单偏移算法 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== 使用传统简单偏移算法 ===",
+          "line_number": 223
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"beading_strategy_scope={}, section_type={}, 使用简单偏移算法\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"beading_strategy_scope={}, section_type={}, 使用简单偏移算法\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "beading_strategy_scope={}, section_type={}, 使用简单偏移算法",
+          "line_number": 224
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== 使用BeadingStrategy系统 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== 使用BeadingStrategy系统 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== 使用BeadingStrategy系统 ===",
+          "line_number": 235
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"beading_strategy_scope={}，启用复杂的线宽计算\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"beading_strategy_scope={}，启用复杂的线宽计算\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "beading_strategy_scope={}，启用复杂的线宽计算",
+          "line_number": 236
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== 开始传统简单偏移算法 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== 开始传统简单偏移算法 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== 开始传统简单偏移算法 ===",
+          "line_number": 389
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"目标墙数: {}, 外墙线宽: {}, 内墙线宽: {}\", inset_count_, bead_width_0_, bead_width_x_);",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"目标墙数: {}, 外墙线宽: {}, 内墙线宽: {}\", inset_count_, bead_width_0_, bead_width_x_);",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "目标墙数: {}, 外墙线宽: {}, 内墙线宽: {}",
+          "line_number": 390
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"第{}层墙：轮廓为空，停止生成\", wall_idx);",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"第{}层墙：轮廓为空，停止生成\", wall_idx);",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "第{}层墙：轮廓为空，停止生成",
+          "line_number": 402
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"第{}层墙：线宽={}, 偏移距离={}\", wall_idx, current_line_width, offset_distance);",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"第{}层墙：线宽={}, 偏移距离={}\", wall_idx, current_line_width, offset_distance);",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "第{}层墙：线宽={}, 偏移距离={}",
+          "line_number": 416
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"外轮廓插值点插入成功：顶点数 {} -> {}，使用Z坐标: {:.2f}mm\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"外轮廓插值点插入成功：顶点数 {} -> {}，使用Z坐标: {:.2f}mm\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "外轮廓插值点插入成功：顶点数 {} -> {}，使用Z坐标: {:.2f}mm",
+          "line_number": 449
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"第{}层墙生成完成，剩余轮廓多边形数: {}\", wall_idx, current_outline.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"第{}层墙生成完成，剩余轮廓多边形数: {}\", wall_idx, current_outline.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "第{}层墙生成完成，剩余轮廓多边形数: {}",
+          "line_number": 476
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== 传统简单偏移算法完成 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== 传统简单偏移算法完成 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== 传统简单偏移算法完成 ===",
+          "line_number": 485
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"成功生成{}层墙，内部轮廓多边形数: {}\", inset_count_, inner_contour_.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"成功生成{}层墙，内部轮廓多边形数: {}\", inset_count_, inner_contour_.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "成功生成{}层墙，内部轮廓多边形数: {}",
+          "line_number": 486
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"第{}层墙包含{}条路径\", i, toolpaths_[i].size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"第{}层墙包含{}条路径\", i, toolpaths_[i].size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "第{}层墙包含{}条路径",
+          "line_number": 493
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"总共生成{}条打印路径\", total_lines);",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"总共生成{}条打印路径\", total_lines);",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "总共生成{}条打印路径",
+          "line_number": 495
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"=== Z接缝点插值预处理开始 ===\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"=== Z接缝点插值预处理开始 ===\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "=== Z接缝点插值预处理开始 ===",
+          "line_number": 706
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"当前层Z坐标: {:.2f}mm, 多边形顶点数: {}\", INT2MM(layer_z), polygon.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"当前层Z坐标: {:.2f}mm, 多边形顶点数: {}\", INT2MM(layer_z), polygon.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "当前层Z坐标: {:.2f}mm, 多边形顶点数: {}",
+          "line_number": 707
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"插值计算失败，返回原多边形\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"插值计算失败，返回原多边形\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "插值计算失败，返回原多边形",
+          "line_number": 721
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"多边形顶点数不足，返回原多边形\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"多边形顶点数不足，返回原多边形\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "多边形顶点数不足，返回原多边形",
+          "line_number": 732
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"最近线段: 索引{}, 距离: {:.2f}mm\", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"最近线段: 索引{}, 距离: {:.2f}mm\", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "最近线段: 索引{}, 距离: {:.2f}mm",
+          "line_number": 767
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"在索引{}插入新点: ({:.2f}, {:.2f})\",",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"在索引{}插入新点: ({:.2f}, {:.2f})\",",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "在索引{}插入新点: ({:.2f}, {:.2f})",
+          "line_number": 782
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"多边形顶点数: {} -> {}\", polygon.size(), result_polygon.size());",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"多边形顶点数: {} -> {}\", polygon.size(), result_polygon.size());",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "多边形顶点数: {} -> {}",
+          "line_number": 784
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"最近点是现有顶点，无需插入新点\");",
+          "new": "CURA_DEBUG(WALL_COMPUTATION, \"最近点是现有顶点，无需插入新点\");",
+          "level": "debug",
+          "category": "WALL_COMPUTATION",
+          "message": "最近点是现有顶点，无需插入新点",
+          "line_number": 790
+        }
+      ],
+      "modification_count": 26
+    },
+    {
+      "filepath": "src/TreeModelVolumes.cpp",
+      "timestamp": "2025-08-09T21:52:15.105429",
+      "category": "TREE_SUPPORT",
+      "original_hash": "2abc30cb367c3c799c88205a9347bd39",
+      "new_hash": "36fe521d8ae5bd7b31e0b34d0e009aa1",
+      "backup_path": "refactor_backups/src/TreeModelVolumes.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Calculating avoidance of radius {} up to layer {}\", key.first, key.second);",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Calculating avoidance of radius {} up to layer {}\", key.first, key.second);",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Calculating avoidance of radius {} up to layer {}",
+          "line_number": 259
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Requested calculation for value already calculated ?\");",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Requested calculation for value already calculated ?\");",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Requested calculation for value already calculated ?",
+          "line_number": 819
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Requested calculation for value already calculated ?\");",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Requested calculation for value already calculated ?\");",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Requested calculation for value already calculated ?",
+          "line_number": 956
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Requested calculation for value already calculated ?\");",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Requested calculation for value already calculated ?\");",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Requested calculation for value already calculated ?",
+          "line_number": 1027
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Requested calculation for value already calculated or max_required_layer is 0?\");",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Requested calculation for value already calculated or max_required_layer is 0?\");",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Requested calculation for value already calculated or max_required_layer is 0?",
+          "line_number": 1106
+        },
+        {
+          "type": "include_addition",
+          "line_number": 18,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 6
+    },
+    {
+      "filepath": "src/FffPolygonGenerator.cpp",
+      "timestamp": "2025-08-09T21:52:15.109261",
+      "category": "DEVELOPMENT",
+      "original_hash": "9f34e99ca95cd57295569480766a4c3e",
+      "new_hash": "1538e7e47fee2e3a9f8ada787c442fc4",
+      "backup_path": "refactor_backups/src/FffPolygonGenerator.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Processing ooze shield\");",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Processing ooze shield\");",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Processing ooze shield",
+          "line_number": 424
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Processing draft shield\");",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Processing draft shield\");",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Processing draft shield",
+          "line_number": 427
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Processing platform adhesion\");",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Processing platform adhesion\");",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Processing platform adhesion",
+          "line_number": 434
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Meshes post-processing\");",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Meshes post-processing\");",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Meshes post-processing",
+          "line_number": 438
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Processing gradual support\");",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Processing gradual support\");",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Processing gradual support",
+          "line_number": 445
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Processing insets for layer {} of {}\", layer_number, mesh.layers.size());",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Processing insets for layer {} of {}\", layer_number, mesh.layers.size());",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Processing insets for layer {} of {}",
+          "line_number": 510
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Processing skins and infill layer {} of {}\", layer_number, mesh.layers.size());",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Processing skins and infill layer {} of {}\", layer_number, mesh.layers.size());",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Processing skins and infill layer {} of {}",
+          "line_number": 582
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"跳过小图形筛选: 周长阈值={:.3f}mm, 面积阈值={:.3f}mm²\",",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"跳过小图形筛选: 周长阈值={:.3f}mm, 面积阈值={:.3f}mm²\",",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "跳过小图形筛选: 周长阈值={:.3f}mm, 面积阈值={:.3f}mm²",
+          "line_number": 1378
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"  图形[{}]: 开始分析最外层wall\", part_index);",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"  图形[{}]: 开始分析最外层wall\", part_index);",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "  图形[{}]: 开始分析最外层wall",
+          "line_number": 1429
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"  图形[{}]: outline包含{}个多边形\", part_index, part.outline.size());",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"  图形[{}]: outline包含{}个多边形\", part_index, part.outline.size());",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "  图形[{}]: outline包含{}个多边形",
+          "line_number": 1430
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}\",",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}\",",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "    多边形[{}]: 周长={:.3f}mm, 面积={:.3f}mm², 顶点数={}",
+          "line_number": 1445
+        },
+        {
+          "type": "include_addition",
+          "line_number": 57,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 12
+    },
+    {
+      "filepath": "src/TreeSupportTipGenerator.cpp",
+      "timestamp": "2025-08-09T21:52:15.110411",
+      "category": "TREE_SUPPORT",
+      "original_hash": "9e797660b4ea354a8d4015e6fd060181",
+      "new_hash": "cb506d749d2f28fe62578078e1361b0c",
+      "backup_path": "refactor_backups/src/TreeSupportTipGenerator.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Compensated for overhang area that had no valid tips. Now has a tip.\");",
+          "new": "CURA_DEBUG(TREE_SUPPORT, \"Compensated for overhang area that had no valid tips. Now has a tip.\");",
+          "level": "debug",
+          "category": "TREE_SUPPORT",
+          "message": "Compensated for overhang area that had no valid tips. Now has a tip.",
+          "line_number": 1123
+        },
+        {
+          "type": "include_addition",
+          "line_number": 26,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 2
+    },
+    {
+      "filepath": "src/Preheat.cpp",
+      "timestamp": "2025-08-09T21:52:15.111866",
+      "category": "DEVELOPMENT",
+      "original_hash": "b499b88c3048d6c955c45ad52b964865",
+      "new_hash": "35e131cb88421c5ee6f4c1cab6680550",
+      "backup_path": "refactor_backups/src/Preheat.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"首层温度保护: 使用layer_0温度 {:.0f}°C\", static_cast<double>(layer_0_temp));",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"首层温度保护: 使用layer_0温度 {:.0f}°C\", static_cast<double>(layer_0_temp));",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "首层温度保护: 使用layer_0温度 {:.0f}°C",
+          "line_number": 65
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"首层温度保护: 使用基础温度 {:.0f}°C\", static_cast<double>(base_temp));",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"首层温度保护: 使用基础温度 {:.0f}°C\", static_cast<double>(base_temp));",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "首层温度保护: 使用基础温度 {:.0f}°C",
+          "line_number": 72
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型高度={:.2f}mm\",",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型高度={:.2f}mm\",",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Raft计算: 层Z={:.2f}mm, Raft厚度={:.2f}mm, Raft间隙={:.2f}mm, 模型高度={:.2f}mm",
+          "line_number": 99
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Raft层温度: 使用基础温度 {:.0f}°C\", static_cast<double>(base_temp));",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"Raft层温度: 使用基础温度 {:.0f}°C\", static_cast<double>(base_temp));",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "Raft层温度: 使用基础温度 {:.0f}°C",
+          "line_number": 107
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"用户定义温度控制: 模型高度={:.2f}mm, 温度={:.0f}°C\", INT2MM(model_height), user_temp);",
+          "new": "CURA_DEBUG(DEVELOPMENT, \"用户定义温度控制: 模型高度={:.2f}mm, 温度={:.0f}°C\", INT2MM(model_height), user_temp);",
+          "level": "debug",
+          "category": "DEVELOPMENT",
+          "message": "用户定义温度控制: 模型高度={:.2f}mm, 温度={:.0f}°C",
+          "line_number": 117
+        },
+        {
+          "type": "include_addition",
+          "line_number": 16,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 6
+    },
+    {
+      "filepath": "src/settings/ZSeamConfig.cpp",
+      "timestamp": "2025-08-09T21:52:15.114884",
+      "category": "SEAM_PLACEMENT",
+      "original_hash": "ad738e4f21021c279574629ea5375db0",
+      "new_hash": "2ee75b83031daf6c796d035ea275f0f8",
+      "backup_path": "refactor_backups/src/settings/ZSeamConfig.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"ZSeamConfig创建: 自定义Z接缝点功能已启用\");",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"ZSeamConfig创建: 自定义Z接缝点功能已启用\");",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "ZSeamConfig创建: 自定义Z接缝点功能已启用",
+          "line_number": 29
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"接缝点数量: {}\", draw_z_seam_points_.size());",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"接缝点数量: {}\", draw_z_seam_points_.size());",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "接缝点数量: {}",
+          "line_number": 30
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"插值模式: {}\", z_seam_point_interpolation_ ? \"启用\" : \"禁用\");",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"插值模式: {}\", z_seam_point_interpolation_ ? \"启用\" : \"禁用\");",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "插值模式: {}",
+          "line_number": 31
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"超出范围处理: {}\", draw_z_seam_grow_ ? \"使用默认\" : \"使用边界点\");",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"超出范围处理: {}\", draw_z_seam_grow_ ? \"使用默认\" : \"使用边界点\");",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "超出范围处理: {}",
+          "line_number": 32
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"当前层Z坐标: {:.2f}mm\", INT2MM(current_layer_z_));",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"当前层Z坐标: {:.2f}mm\", INT2MM(current_layer_z_));",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "当前层Z坐标: {:.2f}mm",
+          "line_number": 33
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"接缝点[{}]: ({:.2f}, {:.2f}, {:.2f})\",",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"接缝点[{}]: ({:.2f}, {:.2f}, {:.2f})\",",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "接缝点[{}]: ({:.2f}, {:.2f}, {:.2f})",
+          "line_number": 38
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"自定义Z接缝点未启用或点列表为空，启用状态: {}, 点数量: {}\",",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"自定义Z接缝点未启用或点列表为空，启用状态: {}, 点数量: {}\",",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "自定义Z接缝点未启用或点列表为空，启用状态: {}, 点数量: {}",
+          "line_number": 49
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"只有一个接缝点，返回: ({:.2f}, {:.2f})\", INT2MM(result.X), INT2MM(result.Y));",
+          "new": "CURA_DEBUG(SEAM_PLACEMENT, \"只有一个接缝点，返回: ({:.2f}, {:.2f})\", INT2MM(result.X), INT2MM(result.Y));",
+          "level": "debug",
+          "category": "SEAM_PLACEMENT",
+          "message": "只有一个接缝点，返回: ({:.2f}, {:.2f})",
+          "line_number": 63
+        },
+        {
+          "type": "include_addition",
+          "line_number": 9,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 9
+    },
+    {
+      "filepath": "src/settings/HeightParameterGraph.cpp",
+      "timestamp": "2025-08-09T21:52:15.118718",
+      "category": "SETTINGS",
+      "original_hash": "344cab5a0a584dc96a8ce9ec3a26f89b",
+      "new_hash": "544bdaa387530ac1202b1befb56bc301",
+      "backup_path": "refactor_backups/src/settings/HeightParameterGraph.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Height {:.2f}mm below minimum {:.2f}mm, using minimum parameter {}\",",
+          "new": "CURA_DEBUG(SETTINGS, \"Height {:.2f}mm below minimum {:.2f}mm, using minimum parameter {}\",",
+          "level": "debug",
+          "category": "SETTINGS",
+          "message": "Height {:.2f}mm below minimum {:.2f}mm, using minimum parameter {}",
+          "line_number": 26
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Height {:.2f}mm interpolated between {:.2f}mm and {:.2f}mm, parameter: {}\",",
+          "new": "CURA_DEBUG(SETTINGS, \"Height {:.2f}mm interpolated between {:.2f}mm and {:.2f}mm, parameter: {}\",",
+          "level": "debug",
+          "category": "SETTINGS",
+          "message": "Height {:.2f}mm interpolated between {:.2f}mm and {:.2f}mm, parameter: {}",
+          "line_number": 44
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Height {:.2f}mm above maximum {:.2f}mm, using maximum parameter {}\",",
+          "new": "CURA_DEBUG(SETTINGS, \"Height {:.2f}mm above maximum {:.2f}mm, using maximum parameter {}\",",
+          "level": "debug",
+          "category": "SETTINGS",
+          "message": "Height {:.2f}mm above maximum {:.2f}mm, using maximum parameter {}",
+          "line_number": 52
+        },
+        {
+          "type": "include_addition",
+          "line_number": 8,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 4
+    },
+    {
+      "filepath": "src/settings/AdaptiveLayerHeights.cpp",
+      "timestamp": "2025-08-09T21:52:15.119315",
+      "category": "ADAPTIVE_LAYERS",
+      "original_hash": "d6ccfbc5ba718e0fd086b51bb9c5d3d2",
+      "new_hash": "5b9aa221d0e3d17aaf25ad660f4e281e",
+      "backup_path": "refactor_backups/src/settings/AdaptiveLayerHeights.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"调整最后一层厚度为 {:.3f}mm\", INT2MM(layer_thickness));",
+          "new": "CURA_DEBUG(ADAPTIVE_LAYERS, \"调整最后一层厚度为 {:.3f}mm\", INT2MM(layer_thickness));",
+          "level": "debug",
+          "category": "ADAPTIVE_LAYERS",
+          "message": "调整最后一层厚度为 {:.3f}mm",
+          "line_number": 122
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"添加层: Z={:.2f}mm, 厚度={:.3f}mm\",",
+          "new": "CURA_DEBUG(ADAPTIVE_LAYERS, \"添加层: Z={:.2f}mm, 厚度={:.3f}mm\",",
+          "level": "debug",
+          "category": "ADAPTIVE_LAYERS",
+          "message": "添加层: Z={:.2f}mm, 厚度={:.3f}mm",
+          "line_number": 135
+        },
+        {
+          "type": "include_addition",
+          "line_number": 17,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 3
+    },
+    {
+      "filepath": "src/settings/Settings.cpp",
+      "timestamp": "2025-08-09T21:52:15.120769",
+      "category": "SETTINGS",
+      "original_hash": "9df6869170be85a569376b388312db0f",
+      "new_hash": "9698850e7e33c57e5f5102d5df625570",
+      "backup_path": "refactor_backups/src/settings/Settings.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Format should be [[f,f,f], [f,f,f], [f,f,f]] allowing whitespace anywhere in between. While what was given was {}\", value_string);",
+          "new": "CURA_DEBUG(SETTINGS, \"Format should be [[f,f,f], [f,f,f], [f,f,f]] allowing whitespace anywhere in between. While what was given was {}\", value_string);",
+          "level": "debug",
+          "category": "SETTINGS",
+          "message": "Format should be [[f,f,f], [f,f,f], [f,f,f]] allowing whitespace anywhere in between. While what was given was {}",
+          "line_number": 459
+        },
+        {
+          "type": "include_addition",
+          "line_number": 39,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 2
+    },
+    {
+      "filepath": "src/infill/SierpinskiFill.cpp",
+      "timestamp": "2025-08-09T21:52:15.122918",
+      "category": "INFILL",
+      "original_hash": "b44a0707b8326d62a6e643e636495761",
+      "new_hash": "60422c2e01061533a5ed6379913d2f02",
+      "backup_path": "refactor_backups/src/infill/SierpinskiFill.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Finished after {} iterations, with a max depth of {}.\", iteration + 1, max_depth_);",
+          "new": "CURA_DEBUG(INFILL, \"Finished after {} iterations, with a max depth of {}.\", iteration + 1, max_depth_);",
+          "level": "debug",
+          "category": "INFILL",
+          "message": "Finished after {} iterations, with a max depth of {}.",
+          "line_number": 181
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(",
+          "new": "CURA_DEBUG(INFILL,",
+          "level": "debug",
+          "category": "INFILL",
+          "message": "",
+          "line_number": 584
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"realized_length: {}, requested_length: {}  :: {}% error\", realized_length, requested_length, 0.01 * static_cast<int>(10000 * error));",
+          "new": "CURA_DEBUG(INFILL, \"realized_length: {}, requested_length: {}  :: {}% error\", realized_length, requested_length, 0.01 * static_cast<int>(10000 * error));",
+          "level": "debug",
+          "category": "INFILL",
+          "message": "realized_length: {}, requested_length: {}  :: {}% error",
+          "line_number": 727
+        },
+        {
+          "type": "include_addition",
+          "line_number": 18,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 4
+    },
+    {
+      "filepath": "src/BeadingStrategy/BeadingStrategyFactory.cpp",
+      "timestamp": "2025-08-09T21:52:15.130370",
+      "category": "BEADING_STRATEGY",
+      "original_hash": "76f31ec0ee8bf788f97306f8630f2708",
+      "new_hash": "8a817ec3899aef745e2a22d243acafde",
+      "backup_path": "refactor_backups/src/BeadingStrategy/BeadingStrategyFactory.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Applying the Redistribute meta-strategy with outer-wall width = {}, inner-wall width = {}\", preferred_bead_width_outer, preferred_bead_width_inner);",
+          "new": "CURA_DEBUG(BEADING_STRATEGY, \"Applying the Redistribute meta-strategy with outer-wall width = {}, inner-wall width = {}\", preferred_bead_width_outer, preferred_bead_width_inner);",
+          "level": "debug",
+          "category": "BEADING_STRATEGY",
+          "message": "Applying the Redistribute meta-strategy with outer-wall width = {}, inner-wall width = {}",
+          "line_number": 43
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Applying the Widening Beading meta-strategy with minimum input width {} and minimum output width {}.\", min_feature_size, min_bead_width);",
+          "new": "CURA_DEBUG(BEADING_STRATEGY, \"Applying the Widening Beading meta-strategy with minimum input width {} and minimum output width {}.\", min_feature_size, min_bead_width);",
+          "level": "debug",
+          "category": "BEADING_STRATEGY",
+          "message": "Applying the Widening Beading meta-strategy with minimum input width {} and minimum output width {}.",
+          "line_number": 48
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Applying the OuterWallOffset meta-strategy with offset = {}\", outer_wall_offset);",
+          "new": "CURA_DEBUG(BEADING_STRATEGY, \"Applying the OuterWallOffset meta-strategy with offset = {}\", outer_wall_offset);",
+          "level": "debug",
+          "category": "BEADING_STRATEGY",
+          "message": "Applying the OuterWallOffset meta-strategy with offset = {}",
+          "line_number": 53
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Applying the Limited Beading meta-strategy with maximum bead count = {}\", max_bead_count);",
+          "new": "CURA_DEBUG(BEADING_STRATEGY, \"Applying the Limited Beading meta-strategy with maximum bead count = {}\", max_bead_count);",
+          "level": "debug",
+          "category": "BEADING_STRATEGY",
+          "message": "Applying the Limited Beading meta-strategy with maximum bead count = {}",
+          "line_number": 58
+        },
+        {
+          "type": "include_addition",
+          "line_number": 15,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 5
+    },
+    {
+      "filepath": "src/communication/ArcusCommunication.cpp",
+      "timestamp": "2025-08-09T21:52:15.134197",
+      "category": "COMMUNICATION",
+      "original_hash": "9e7515fdb120318a0ec9adaa8db87c12",
+      "new_hash": "3d43ace95d1297a54d5479d767c3c873",
+      "backup_path": "refactor_backups/src/communication/ArcusCommunication.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Sent slicing finished message.\");",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Sent slicing finished message.\");",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Sent slicing finished message.",
+          "line_number": 372
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Sending layer data for layer {} of {}.\", entry.first, data.slice_data.size());",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Sending layer data for layer {} of {}.\", entry.first, data.slice_data.size());",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Sending layer data for layer {} of {}.",
+          "line_number": 402
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Sending print time and material estimates.\");",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Sending print time and material estimates.\");",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Sending print time and material estimates.",
+          "line_number": 413
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Done sending print time and material estimates.\");",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Done sending print time and material estimates.\");",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Done sending print time and material estimates.",
+          "line_number": 440
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Received a Slice message.\");",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Received a Slice message.\");",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Received a Slice message.",
+          "line_number": 480
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Setting Sentry user to {}\", slice_message->user_name());",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Setting Sentry user to {}\", slice_message->user_name());",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Setting Sentry user to {}",
+          "line_number": 487
+        },
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"Done reading Slice message.\");",
+          "new": "CURA_DEBUG(COMMUNICATION, \"Done reading Slice message.\");",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "Done reading Slice message.",
+          "line_number": 538
+        },
+        {
+          "type": "include_addition",
+          "line_number": 41,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 8
+    },
+    {
+      "filepath": "src/communication/Listener.cpp",
+      "timestamp": "2025-08-09T21:52:15.134811",
+      "category": "COMMUNICATION",
+      "original_hash": "df77ac89f323790677ae0fa127a6da1b",
+      "new_hash": "8d17cfd07f56f7f5dd1e6e12fe79a63a",
+      "backup_path": "refactor_backups/src/communication/Listener.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"{}\", error.getErrorMessage());",
+          "new": "CURA_DEBUG(COMMUNICATION, \"{}\", error.getErrorMessage());",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "{}",
+          "line_number": 28
+        },
+        {
+          "type": "include_addition",
+          "line_number": 10,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 2
+    },
+    {
+      "filepath": "src/communication/CommandLine.cpp",
+      "timestamp": "2025-08-09T21:52:15.135500",
+      "category": "COMMUNICATION",
+      "original_hash": "9e26600afe0567f38ab0c354fb69c950",
+      "new_hash": "8e9dcdf0ae64d985a1cd2fb3b4f1e171",
+      "backup_path": "refactor_backups/src/communication/CommandLine.cpp",
+      "modifications": [
+        {
+          "type": "spdlog_replacement",
+          "original": "spdlog::debug(\"JSON setting '{}': '{}'\", name, buffer.GetString());",
+          "new": "CURA_DEBUG(COMMUNICATION, \"JSON setting '{}': '{}'\", name, buffer.GetString());",
+          "level": "debug",
+          "category": "COMMUNICATION",
+          "message": "JSON setting '{}': '{}'",
+          "line_number": 675
+        },
+        {
+          "type": "include_addition",
+          "line_number": 34,
+          "content": "#include \"utils/DebugManager.h\""
+        }
+      ],
+      "modification_count": 2
+    }
+  ],
+  "completed_files": [
+    "src/mesh.cpp",
+    "src/SkeletalTrapezoidation.cpp",
+    "src/WallsComputation.cpp",
+    "src/TreeSupport.cpp",
+    "src/raft.cpp",
+    "src/LayerPlan.cpp",
+    "src/gcodeExport.cpp",
+    "src/WallToolPaths.cpp",
+    "src/TreeModelVolumes.cpp",
+    "src/FffPolygonGenerator.cpp",
+    "src/TreeSupportTipGenerator.cpp",
+    "src/Preheat.cpp",
+    "src/settings/ZSeamConfig.cpp",
+    "src/settings/HeightParameterGraph.cpp",
+    "src/settings/AdaptiveLayerHeights.cpp",
+    "src/settings/Settings.cpp",
+    "src/infill/SierpinskiFill.cpp",
+    "src/BeadingStrategy/BeadingStrategyFactory.cpp",
+    "src/communication/ArcusCommunication.cpp",
+    "src/communication/Listener.cpp",
+    "src/communication/CommandLine.cpp"
+  ],
+  "failed_files": [],
+  "end_time": "2025-08-09T21:52:15.169158",
+  "total_processed": 18
+}

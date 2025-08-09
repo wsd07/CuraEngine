@@ -38,6 +38,7 @@
 #include "settings/types/LayerIndex.h" //To point to layers.
 #include "settings/types/Velocity.h" //To send to layer view how fast stuff is printing.
 #include "utils/channel.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -369,7 +370,7 @@ void ArcusCommunication::sendFinishedSlicing() const
 {
     std::shared_ptr<proto::SlicingFinished> done_message = std::make_shared<proto::SlicingFinished>();
     private_data->socket->sendMessage(done_message);
-    spdlog::debug("Sent slicing finished message.");
+    CURA_DEBUG(COMMUNICATION, "Sent slicing finished message.");
 }
 
 void ArcusCommunication::sendLayerComplete(const LayerIndex::value_type& layer_nr, const coord_t& z, const coord_t& thickness)
@@ -399,7 +400,7 @@ void ArcusCommunication::sendOptimizedLayerData()
 
     for (const auto& entry : data.slice_data) // Note: This is in no particular order!
     {
-        spdlog::debug("Sending layer data for layer {} of {}.", entry.first, data.slice_data.size());
+        CURA_DEBUG(COMMUNICATION, "Sending layer data for layer {} of {}.", entry.first, data.slice_data.size());
         private_data->socket->sendMessage(entry.second); // Send the actual layers.
     }
     data.sliced_objects = 0;
@@ -410,7 +411,7 @@ void ArcusCommunication::sendOptimizedLayerData()
 
 void ArcusCommunication::sendPrintTimeMaterialEstimates() const
 {
-    spdlog::debug("Sending print time and material estimates.");
+    CURA_DEBUG(COMMUNICATION, "Sending print time and material estimates.");
     std::shared_ptr<proto::PrintTimeMaterialEstimates> message = std::make_shared<proto::PrintTimeMaterialEstimates>();
 
     std::vector<Duration> time_estimates = FffProcessor::getInstance()->getTotalPrintTimePerFeature();
@@ -437,7 +438,7 @@ void ArcusCommunication::sendPrintTimeMaterialEstimates() const
     }
 
     private_data->socket->sendMessage(message);
-    spdlog::debug("Done sending print time and material estimates.");
+    CURA_DEBUG(COMMUNICATION, "Done sending print time and material estimates.");
 }
 
 void ArcusCommunication::sendProgress(double progress) const
@@ -477,14 +478,14 @@ void ArcusCommunication::sliceNext()
     {
         return;
     }
-    spdlog::debug("Received a Slice message.");
+    CURA_DEBUG(COMMUNICATION, "Received a Slice message.");
 
 #ifdef SENTRY_URL
     sentry_value_t user = sentry_value_new_object();
     sentry_value_set_by_key(user, "id", sentry_value_new_string(slice_message->sentry_id().c_str()));
     if (slice_message->has_user_name())
     {
-        spdlog::debug("Setting Sentry user to {}", slice_message->user_name());
+        CURA_DEBUG(COMMUNICATION, "Setting Sentry user to {}", slice_message->user_name());
         sentry_value_set_by_key(user, "username", sentry_value_new_string(slice_message->user_name().c_str()));
     }
     sentry_set_user(user);
@@ -535,7 +536,7 @@ void ArcusCommunication::sliceNext()
     {
         private_data->readMeshGroupMessage(mesh_group_message);
     }
-    spdlog::debug("Done reading Slice message.");
+    CURA_DEBUG(COMMUNICATION, "Done reading Slice message.");
 
     if (! slice->scene.mesh_groups.empty())
     {

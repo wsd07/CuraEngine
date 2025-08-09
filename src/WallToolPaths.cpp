@@ -129,7 +129,7 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     // 这确保插值点在所有后续处理中都存在
     if (settings_.get<bool>("draw_z_seam_enable") && settings_.get<bool>("z_seam_point_interpolation"))
     {
-        spdlog::debug("=== 开始Z接缝点预处理插值 ===");
+        CURA_DEBUG(WALL_COMPUTATION, "=== 开始Z接缝点预处理插值 ===");
 
         // 获取正确的层Z坐标：优先使用传入的layer_z_，否则回退到简单计算
         coord_t layer_z;
@@ -137,13 +137,13 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
         {
             // 使用传入的正确Z坐标（支持可变层厚）
             layer_z = layer_z_;
-            spdlog::debug("使用传入的层Z坐标: {:.2f}mm（支持可变层厚）", INT2MM(layer_z));
+            CURA_DEBUG(WALL_COMPUTATION, "使用传入的层Z坐标: {:.2f}mm（支持可变层厚）", INT2MM(layer_z));
         }
         else
         {
             // 回退到简单计算（向后兼容）
             layer_z = layer_idx_ * settings_.get<coord_t>("layer_height");
-            spdlog::debug("使用简单计算的层Z坐标: {:.2f}mm（固定层厚模式）", INT2MM(layer_z));
+            CURA_DEBUG(WALL_COMPUTATION, "使用简单计算的层Z坐标: {:.2f}mm（固定层厚模式）", INT2MM(layer_z));
         }
 
         Shape processed_outline;
@@ -153,7 +153,7 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
             processed_outline.push_back(processed_polygon);
         }
         prepared_outline = processed_outline;
-        spdlog::debug("Z接缝点预处理完成，处理了{}个多边形", prepared_outline.size());
+        CURA_DEBUG(WALL_COMPUTATION, "Z接缝点预处理完成，处理了{}个多边形", prepared_outline.size());
     }
 
     const coord_t wall_transition_length = settings_.get<coord_t>("wall_transition_length");
@@ -220,8 +220,8 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
 
     if (!should_use_beading_strategy) {
         // === 使用传统简单偏移算法 ===
-        spdlog::debug("=== 使用传统简单偏移算法 ===");
-        spdlog::debug("beading_strategy_scope={}, section_type={}, 使用简单偏移算法",
+        CURA_DEBUG(WALL_COMPUTATION, "=== 使用传统简单偏移算法 ===");
+        CURA_DEBUG(WALL_COMPUTATION, "beading_strategy_scope={}, section_type={}, 使用简单偏移算法",
                      beading_strategy_scope == EBeadingStrategyScope::OFF ? "OFF" :
                      beading_strategy_scope == EBeadingStrategyScope::ONLY_SKIN ? "ONLY_SKIN" :
                      beading_strategy_scope == EBeadingStrategyScope::INNER_WALL_SKIN ? "INNER_WALL_SKIN" : "ALL",
@@ -232,8 +232,8 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
     }
 
     // === 原有BeadingStrategy路径 ===
-    spdlog::debug("=== 使用BeadingStrategy系统 ===");
-    spdlog::debug("beading_strategy_scope={}，启用复杂的线宽计算",
+    CURA_DEBUG(WALL_COMPUTATION, "=== 使用BeadingStrategy系统 ===");
+    CURA_DEBUG(WALL_COMPUTATION, "beading_strategy_scope={}，启用复杂的线宽计算",
                  beading_strategy_scope == EBeadingStrategyScope::ALL ? "ALL" :
                  beading_strategy_scope == EBeadingStrategyScope::INNER_WALL_SKIN ? "INNER_WALL_SKIN" :
                  beading_strategy_scope == EBeadingStrategyScope::ONLY_SKIN ? "ONLY_SKIN" : "OFF");
@@ -386,8 +386,8 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
     // === 传统简单偏移算法实现 ===
     // 完全绕过BeadingStrategy系统，使用固定线宽的简单偏移
 
-    spdlog::debug("=== 开始传统简单偏移算法 ===");
-    spdlog::debug("目标墙数: {}, 外墙线宽: {}, 内墙线宽: {}", inset_count_, bead_width_0_, bead_width_x_);
+    CURA_DEBUG(WALL_COMPUTATION, "=== 开始传统简单偏移算法 ===");
+    CURA_DEBUG(WALL_COMPUTATION, "目标墙数: {}, 外墙线宽: {}, 内墙线宽: {}", inset_count_, bead_width_0_, bead_width_x_);
 
     toolpaths_.clear();
     toolpaths_.resize(inset_count_);
@@ -399,7 +399,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
     {
         if (current_outline.empty())
         {
-            spdlog::debug("第{}层墙：轮廓为空，停止生成", wall_idx);
+            CURA_DEBUG(WALL_COMPUTATION, "第{}层墙：轮廓为空，停止生成", wall_idx);
             break;
         }
 
@@ -413,7 +413,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
             offset_distance += wall_0_inset_;  // 外墙额外内缩
         }
 
-        spdlog::debug("第{}层墙：线宽={}, 偏移距离={}", wall_idx, current_line_width, offset_distance);
+        CURA_DEBUG(WALL_COMPUTATION, "第{}层墙：线宽={}, 偏移距离={}", wall_idx, current_line_width, offset_distance);
 
         // === 修复：先计算偏移后的轮廓，再创建ExtrusionLine ===
         // 计算当前层墙的偏移轮廓
@@ -446,7 +446,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
 
                 if (processed_polygon.size() != offset_polygon.size())
                 {
-                    spdlog::debug("外轮廓插值点插入成功：顶点数 {} -> {}，使用Z坐标: {:.2f}mm",
+                    CURA_DEBUG(WALL_COMPUTATION, "外轮廓插值点插入成功：顶点数 {} -> {}，使用Z坐标: {:.2f}mm",
                                offset_polygon.size(), processed_polygon.size(), INT2MM(layer_z));
                 }
             }
@@ -473,7 +473,7 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
         // 修复：应该基于当前轮廓偏移整个线宽，而不是基于已偏移的轮廓再次偏移
         current_outline = current_outline.offset(-current_line_width);
 
-        spdlog::debug("第{}层墙生成完成，剩余轮廓多边形数: {}", wall_idx, current_outline.size());
+        CURA_DEBUG(WALL_COMPUTATION, "第{}层墙生成完成，剩余轮廓多边形数: {}", wall_idx, current_outline.size());
     }
 
     // 设置内部轮廓（最后一层偏移的结果）
@@ -482,17 +482,17 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
     // 标记工具路径已生成
     toolpaths_generated_ = true;
 
-    spdlog::debug("=== 传统简单偏移算法完成 ===");
-    spdlog::debug("成功生成{}层墙，内部轮廓多边形数: {}", inset_count_, inner_contour_.size());
+    CURA_DEBUG(WALL_COMPUTATION, "=== 传统简单偏移算法完成 ===");
+    CURA_DEBUG(WALL_COMPUTATION, "成功生成{}层墙，内部轮廓多边形数: {}", inset_count_, inner_contour_.size());
 
     // 统计生成的路径数量
     size_t total_lines = 0;
     for (size_t i = 0; i < toolpaths_.size(); i++)
     {
         total_lines += toolpaths_[i].size();
-        spdlog::debug("第{}层墙包含{}条路径", i, toolpaths_[i].size());
+        CURA_DEBUG(WALL_COMPUTATION, "第{}层墙包含{}条路径", i, toolpaths_[i].size());
     }
-    spdlog::debug("总共生成{}条打印路径", total_lines);
+    CURA_DEBUG(WALL_COMPUTATION, "总共生成{}条打印路径", total_lines);
 }
 
 void WallToolPaths::removeSmallFillLines(std::vector<VariableWidthLines>& toolpaths)
@@ -703,8 +703,8 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         return polygon; // 没有设置接缝点，返回原多边形
     }
 
-    spdlog::debug("=== Z接缝点插值预处理开始 ===");
-    spdlog::debug("当前层Z坐标: {:.2f}mm, 多边形顶点数: {}", INT2MM(layer_z), polygon.size());
+    CURA_DEBUG(WALL_COMPUTATION, "=== Z接缝点插值预处理开始 ===");
+    CURA_DEBUG(WALL_COMPUTATION, "当前层Z坐标: {:.2f}mm, 多边形顶点数: {}", INT2MM(layer_z), polygon.size());
 
     // 创建ZSeamConfig进行插值计算
     ZSeamConfig temp_config;
@@ -718,7 +718,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
     auto interpolated_pos = temp_config.getInterpolatedSeamPosition();
     if (!interpolated_pos.has_value())
     {
-        spdlog::debug("插值计算失败，返回原多边形");
+        CURA_DEBUG(WALL_COMPUTATION, "插值计算失败，返回原多边形");
         return polygon;
     }
 
@@ -729,7 +729,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
     const PointsSet& points = polygon;
     if (points.size() < 3)
     {
-        spdlog::debug("多边形顶点数不足，返回原多边形");
+        CURA_DEBUG(WALL_COMPUTATION, "多边形顶点数不足，返回原多边形");
         return polygon;
     }
 
@@ -764,7 +764,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         }
     }
 
-    spdlog::debug("最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
+    CURA_DEBUG(WALL_COMPUTATION, "最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
 
     if (need_insert_point)
     {
@@ -779,15 +779,15 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         // 创建新的多边形
         Polygon result_polygon(std::move(modified_points), true);
 
-        spdlog::debug("在索引{}插入新点: ({:.2f}, {:.2f})",
+        CURA_DEBUG(WALL_COMPUTATION, "在索引{}插入新点: ({:.2f}, {:.2f})",
                     insert_idx, INT2MM(closest_point_on_segment.X), INT2MM(closest_point_on_segment.Y));
-        spdlog::debug("多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
+        CURA_DEBUG(WALL_COMPUTATION, "多边形顶点数: {} -> {}", polygon.size(), result_polygon.size());
 
         return result_polygon;
     }
     else
     {
-        spdlog::debug("最近点是现有顶点，无需插入新点");
+        CURA_DEBUG(WALL_COMPUTATION, "最近点是现有顶点，无需插入新点");
         return polygon;
     }
 }
