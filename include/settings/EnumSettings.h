@@ -302,6 +302,17 @@ enum class CoolDuringExtruderSwitch
 };
 
 /*!
+ * Scope of beading strategy application
+ */
+enum class EBeadingStrategyScope
+{
+    ALL, // Apply beading strategy to all walls and skin
+    INNER_WALL_SKIN, // Apply to inner walls and skin, exclude outer walls for better surface quality
+    ONLY_SKIN, // Apply only to top/bottom skin surfaces
+    OFF, // Disable beading strategy completely, use simple offset algorithm
+};
+
+/*!
  * Convenience binary operator to allow testing brim location easily, like (actual_location & BrimLocation::OUTSIDE)
  */
 [[maybe_unused]] static int operator&(BrimLocation location1, BrimLocation location2)

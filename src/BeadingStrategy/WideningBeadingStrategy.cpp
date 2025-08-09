@@ -3,6 +3,10 @@
 
 #include "BeadingStrategy/WideningBeadingStrategy.h"
 
+#include <spdlog/spdlog.h>
+
+#include "utils/macros.h"
+
 namespace cura
 {
 
@@ -12,6 +16,15 @@ WideningBeadingStrategy::WideningBeadingStrategy(BeadingStrategyPtr parent, cons
     , min_input_width_(min_input_width)
     , min_output_width_(min_output_width)
 {
+    // 安全检查：确保参数合理
+    if (min_output_width_ < optimal_width_ / 4) {
+        spdlog::warn("WideningBeadingStrategy: min_output_width ({:.2f}mm) 过小，可能导致计算错误",
+                     INT2MM(min_output_width_));
+    }
+    if (min_input_width_ < min_output_width_) {
+        spdlog::warn("WideningBeadingStrategy: min_input_width ({:.2f}mm) < min_output_width ({:.2f}mm)，逻辑可能有问题",
+                     INT2MM(min_input_width_), INT2MM(min_output_width_));
+    }
 }
 
 std::string WideningBeadingStrategy::toString() const
@@ -27,8 +40,20 @@ WideningBeadingStrategy::Beading WideningBeadingStrategy::compute(coord_t thickn
         ret.total_thickness = thickness;
         if (thickness >= min_input_width_)
         {
-            ret.bead_widths.emplace_back(std::max(thickness, min_output_width_));
+            // 安全计算：确保输出宽度不会过大
+            const coord_t safe_output_width = std::min(
+                std::max(thickness, min_output_width_),
+                optimal_width_  // 不超过最优宽度
+            );
+
+            ret.bead_widths.emplace_back(safe_output_width);
             ret.toolpath_locations.emplace_back(thickness / 2);
+
+            // 计算剩余厚度
+            ret.left_over = thickness - safe_output_width;
+            if (ret.left_over < 0) {
+                ret.left_over = 0;  // 防止负值
+            }
         }
         else
         {

@@ -2,7 +2,7 @@
 // CuraEngine is released under the terms of the AGPLv3 or higher.
 
 #include "BeadingStrategy/BeadingStrategy.h"
-
+#include <spdlog/spdlog.h>
 #include <cassert>
 
 namespace cura
@@ -47,7 +47,26 @@ double BeadingStrategy::getTransitionAnchorPos(coord_t lower_bead_count) const
     coord_t lower_optimum = getOptimalThickness(lower_bead_count);
     coord_t transition_point = getTransitionThickness(lower_bead_count);
     coord_t upper_optimum = getOptimalThickness(lower_bead_count + 1);
-    return 1.0 - static_cast<double>(transition_point - lower_optimum) / static_cast<double>(upper_optimum - lower_optimum);
+
+    // 安全检查：防止除零和异常值
+    const coord_t denominator = upper_optimum - lower_optimum;
+    if (denominator <= 0) {
+        spdlog::warn("BeadingStrategy::getTransitionAnchorPos: 异常的厚度关系 lower={}, transition={}, upper={}",
+                     lower_optimum, transition_point, upper_optimum);
+        return 0.5; // 返回安全的中间值
+    }
+
+    const double raw_anchor_pos = 1.0 - static_cast<double>(transition_point - lower_optimum) / static_cast<double>(denominator);
+
+    // 限制在合理范围内 [0.1, 0.9]
+    const double safe_anchor_pos = std::max(0.1, std::min(0.9, raw_anchor_pos));
+
+    if (std::abs(raw_anchor_pos - safe_anchor_pos) > 0.01) {
+        spdlog::warn("BeadingStrategy::getTransitionAnchorPos: 锚点位置从{:.3f}修正为{:.3f}，防止计算错误",
+                     raw_anchor_pos, safe_anchor_pos);
+    }
+
+    return safe_anchor_pos;
 }
 
 std::vector<coord_t> BeadingStrategy::getNonlinearThicknesses([[maybe_unused]] coord_t lower_bead_count) const

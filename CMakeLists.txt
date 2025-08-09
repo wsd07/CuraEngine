@@ -136,6 +136,7 @@ set(engine_SRCS # Except main.cpp.
         src/utils/AABB3D.cpp
         src/utils/channel.cpp
         src/utils/Date.cpp
+        src/utils/DebugManager.cpp
         src/utils/ExtrusionJunction.cpp
         src/utils/ExtrusionLine.cpp
         src/utils/ExtrusionSegment.cpp

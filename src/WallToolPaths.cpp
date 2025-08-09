@@ -15,7 +15,8 @@
 #include "SkeletalTrapezoidation.h"
 #include "utils/ExtrusionLineStitcher.h"
 #include "utils/Simplify.h"
-#include "utils/SparsePointGrid.h" //To stitch the inner contour.
+#include "utils/SparsePointGrid.h"
+#include "utils/DebugManager.h" //To stitch the inner contour.
 #include "utils/actions/smooth.h"
 #include "utils/linearAlg2D.h"
 #include "utils/polygonUtils.h"
@@ -157,6 +158,18 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
 
     const coord_t wall_transition_length = settings_.get<coord_t>("wall_transition_length");
 
+    // === 参数验证和修复 ===
+    // 检查min_bead_width是否过小，防止BeadingStrategy计算错误
+    const coord_t original_min_bead_width = settings_.get<coord_t>("min_bead_width");
+    const coord_t absolute_minimum = MM2INT(0.1);  // 0.1mm绝对最小值
+    const coord_t stability_minimum = std::max(bead_width_x_, bead_width_0_) * 0.4;  // 40%稳定性约束
+    const coord_t safe_min_bead_width = std::max({original_min_bead_width, absolute_minimum, stability_minimum});
+
+    if (original_min_bead_width != safe_min_bead_width) {
+        CURA_WARN("【参数修复】min_bead_width从{:.2f}mm调整为{:.2f}mm（安全下限：40%喷头直径），防止BeadingStrategy计算错误",
+                     INT2MM(original_min_bead_width), INT2MM(safe_min_bead_width));
+    }
+
     // When to split the middle wall into two:
     const double min_even_wall_line_width = settings_.get<double>("min_even_wall_line_width");
     const double wall_line_width_0 = settings_.get<double>("wall_line_width_0");
@@ -169,22 +182,50 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
 
     const int wall_distribution_count = settings_.get<int>("wall_distribution_count");
 
-    // === 新增功能：获取beading_strategy_enable参数 ===
-    // 控制是否启用BeadingStrategy系统
-    bool beading_strategy_enable = true;  // 默认启用，保持向后兼容
+    // === 新增功能：获取beading_strategy_scope参数 ===
+    // 控制BeadingStrategy系统的应用范围
+    EBeadingStrategyScope beading_strategy_scope = EBeadingStrategyScope::INNER_WALL_SKIN;  // 默认值
     try {
-        beading_strategy_enable = settings_.get<bool>("beading_strategy_enable");
+        beading_strategy_scope = settings_.get<EBeadingStrategyScope>("beading_strategy_scope");
     } catch (...) {
-        // 参数未设置，使用默认值true
-        beading_strategy_enable = true;
+        // 参数未设置，使用默认值
+        beading_strategy_scope = EBeadingStrategyScope::INNER_WALL_SKIN;
     }
 
-    // === 核心功能：beading_strategy_enable控制 ===
-    if (!beading_strategy_enable) {
-        // === 完全禁用BeadingStrategy，使用传统简单偏移算法 ===
-        spdlog::debug("=== BeadingStrategy系统已完全禁用 ===");
-        spdlog::debug("beading_strategy_enable=false，使用传统简单偏移算法");
-        spdlog::debug("这将绕过所有复杂的线宽计算，使用固定线宽偏移");
+    // === 核心功能：beading_strategy_scope控制 ===
+    // 根据section_type和beading_strategy_scope决定是否使用BeadingStrategy
+    bool should_use_beading_strategy = true;
+
+    switch (beading_strategy_scope) {
+        case EBeadingStrategyScope::OFF:
+            should_use_beading_strategy = false;
+            break;
+        case EBeadingStrategyScope::ONLY_SKIN:
+            should_use_beading_strategy = (section_type_ == SectionType::SKIN);
+            break;
+        case EBeadingStrategyScope::INNER_WALL_SKIN:
+            // 对于skin墙体，全部使用BeadingStrategy
+            // 对于普通墙体，如果只有外墙则使用简单偏移，如果有内墙则使用BeadingStrategy
+            if (section_type_ == SectionType::SKIN) {
+                should_use_beading_strategy = true;  // skin总是使用BeadingStrategy
+            } else {
+                should_use_beading_strategy = (inset_count_ > 1);  // 只有多层墙时才使用BeadingStrategy
+            }
+            break;
+        case EBeadingStrategyScope::ALL:
+        default:
+            should_use_beading_strategy = true;
+            break;
+    }
+
+    if (!should_use_beading_strategy) {
+        // === 使用传统简单偏移算法 ===
+        spdlog::debug("=== 使用传统简单偏移算法 ===");
+        spdlog::debug("beading_strategy_scope={}, section_type={}, 使用简单偏移算法",
+                     beading_strategy_scope == EBeadingStrategyScope::OFF ? "OFF" :
+                     beading_strategy_scope == EBeadingStrategyScope::ONLY_SKIN ? "ONLY_SKIN" :
+                     beading_strategy_scope == EBeadingStrategyScope::INNER_WALL_SKIN ? "INNER_WALL_SKIN" : "ALL",
+                     section_type_ == SectionType::SKIN ? "SKIN" : "WALL");
 
         generateSimpleWalls(prepared_outline);
         return toolpaths_;
@@ -192,7 +233,10 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
 
     // === 原有BeadingStrategy路径 ===
     spdlog::debug("=== 使用BeadingStrategy系统 ===");
-    spdlog::debug("beading_strategy_enable=true，启用复杂的线宽计算");
+    spdlog::debug("beading_strategy_scope={}，启用复杂的线宽计算",
+                 beading_strategy_scope == EBeadingStrategyScope::ALL ? "ALL" :
+                 beading_strategy_scope == EBeadingStrategyScope::INNER_WALL_SKIN ? "INNER_WALL_SKIN" :
+                 beading_strategy_scope == EBeadingStrategyScope::ONLY_SKIN ? "ONLY_SKIN" : "OFF");
 
     const size_t max_bead_count = (inset_count_ < std::numeric_limits<size_t>::max() / 2) ? 2 * inset_count_ : std::numeric_limits<size_t>::max();
     const auto beading_strat = BeadingStrategyFactory::makeStrategy(
@@ -201,7 +245,7 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
         wall_transition_length,
         transitioning_angle,
         print_thin_walls_,
-        min_bead_width_,
+        safe_min_bead_width,  // 使用修复后的安全值
         min_feature_size_,
         wall_split_middle_threshold,
         wall_add_middle_threshold,
@@ -426,7 +470,8 @@ void WallToolPaths::generateSimpleWalls(const Shape& outline)
         }
 
         // 为下一层墙计算新的轮廓（向内偏移）
-        current_outline = offset_outline.offset(-offset_distance);
+        // 修复：应该基于当前轮廓偏移整个线宽，而不是基于已偏移的轮廓再次偏移
+        current_outline = current_outline.offset(-current_line_width);
 
         spdlog::debug("第{}层墙生成完成，剩余轮廓多边形数: {}", wall_idx, current_outline.size());
     }

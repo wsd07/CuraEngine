@@ -698,6 +698,26 @@ ESurfaceMode Settings::get<ESurfaceMode>(const std::string& key) const
 }
 
 template<>
+EBeadingStrategyScope Settings::get<EBeadingStrategyScope>(const std::string& key) const
+{
+    const std::string& value = get<std::string>(key);
+    using namespace cura::utils;
+    switch (hash_enum(value))
+    {
+    case "all"_sw:
+        return EBeadingStrategyScope::ALL;
+    case "inner_wall_skin"_sw:
+        return EBeadingStrategyScope::INNER_WALL_SKIN;
+    case "only_skin"_sw:
+        return EBeadingStrategyScope::ONLY_SKIN;
+    case "off"_sw:
+        return EBeadingStrategyScope::OFF;
+    default:
+        return EBeadingStrategyScope::INNER_WALL_SKIN;
+    }
+}
+
+template<>
 FillPerimeterGapMode Settings::get<FillPerimeterGapMode>(const std::string& key) const
 {
     const std::string& value = get<std::string>(key);
