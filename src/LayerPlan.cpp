@@ -4372,6 +4372,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     PrintFeatureType last_type = PrintFeatureType::NoneType;
     std::vector<size_t> paths_to_remove; // 记录需要从原ExtruderPlan中删除的路径索引
     coord_t layer_z = last_extruder_plan.paths_[0].points[0].z_;
+    GCodePath former_path;
     // 从后往前遍历，找到最后一组相同类型的挤出路径
     for (int i = static_cast<int>(last_extruder_plan.paths_.size()) - 1; i >= 0; i--)
     {
@@ -4401,12 +4402,9 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         // 遇到不同类型的挤出路径，停止（找到了完整的最后一组）
         else
         {
-            //将前序的一组空移也收录进来，可以的到挤出线的起点
-            if (path.isTravelPath())
-            {
-                temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
-                paths_to_remove.insert(paths_to_remove.begin(), i);
-            }
+            //将前序的一组最后一条线也收录进来，可以的到挤出线的起点
+            temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
+            //paths_to_remove.insert(paths_to_remove.begin(), i);
             break;
         }
 
@@ -4437,7 +4435,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     Point2LL current_pos; // 当前位置（上一个path的终点）
     bool has_current_pos = false;
 
-    for (size_t path_idx = 0; path_idx < temp_extrusion_paths.size(); path_idx++)
+    for (size_t path_idx = 1; path_idx < temp_extrusion_paths.size(); path_idx++)
     {
         const GCodePath& path = temp_extrusion_paths[path_idx];
 
@@ -4624,7 +4622,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     {
         paths1.push_back(temp_extrusion_paths[i]);
     }
-    for (size_t i = best_path_idx + 1; i < temp_extrusion_paths.size(); i++)
+    for (size_t i = best_path_idx; i < temp_extrusion_paths.size(); i++)
     {
         paths2.push_back(temp_extrusion_paths[i]);
     }
@@ -4634,14 +4632,22 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     // 方法1：最优点-原起点-原终点-最优点（需要反向和点平移）
     std::vector<GCodePath> method1_paths;
 
-    // 反向paths1并添加到method1
-    for (int i = static_cast<int>(paths1.size()) - 1; i >= 0; i--)
+    // 反向paths1并添加到method1，线段数会减少一个，也就是我们最初额外加进去的上一个类型的线，用于获取本类型线的起点
+    for (int i = static_cast<int>(paths1.size()) - 1; i > 0; i--)
     {
         GCodePath reversed_path1 = paths1[i];
+
         if (!reversed_path1.points.empty())
         {
+            //先清空所有点
+            reversed_path1.points.erase(reversed_path1.points.begin(),reversed_path1.points.end());
             // 反向点序列
-            std::reverse(reversed_path1.points.begin(), reversed_path1.points.end());
+            for(int j = static_cast<int>(paths1[i].points.size()) - 1; j > 0; j--)
+            {
+                reversed_path1.points.push_back(paths1[i].points[j-1]);
+            }
+            //添加上条路径的终点，作为本反向路径的终点。
+            reversed_path1.points.push_back(paths1[i-1].points[paths1[i-1].points.size()-1]);
         }
         method1_paths.push_back(reversed_path1);
     }
@@ -4674,46 +4680,23 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     for (int i = static_cast<int>(paths2.size()) - 1; i >= 0; i--)
     {
         GCodePath reversed_path2 = paths2[i];
+
         if (!reversed_path2.points.empty())
         {
+            //先清空所有点
+            reversed_path2.points.erase(reversed_path2.points.begin(),reversed_path2.points.end());
             // 反向点序列
-            std::reverse(reversed_path2.points.begin(), reversed_path2.points.end());
+            for(int j = static_cast<int>(paths2[i].points.size()) - 1; j > 0; j--)
+            {
+                reversed_path2.points.push_back(paths2[i].points[j-1]);
+            }
+            //添加上条路径的终点，作为本反向路径的终点。
+            if (i > 0)reversed_path2.points.push_back(paths2[i-1].points[paths2[i-1].points.size()-1]);
+            else reversed_path2.points.push_back(paths1[paths1.size()-1].points[paths1[paths1.size()-1].points.size()-1]);
         }
         method1_paths.push_back(reversed_path2);
     }
 
-    // 对method1进行点的循环平移
-    if (!method1_paths.empty())
-    {
-        // 收集所有点
-        std::vector<Point3LL> all_points;
-        for (const auto& path : method1_paths)
-        {
-            for (const auto& point : path.points)
-            {
-                all_points.push_back(point);
-            }
-        }
-
-        if (!all_points.empty())
-        {
-            // 重新分配点到路径
-            size_t point_idx = 0;
-            for (auto& path : method1_paths)
-            {
-                for (auto& point : path.points)
-                {
-                    if (point_idx < all_points.size()-1)
-                    {
-                        point = all_points[++point_idx];
-                    }else if (point_idx == all_points.size()-1)
-                    {
-                        point = all_points[0];
-                    }
-                }
-            }
-        }
-    }
 
     // 方法2：最优点-原终点-原起点-最优点
     std::vector<GCodePath> method2_paths;
@@ -4749,73 +4732,135 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     }
 
     // 添加paths1到method2
-    for (const auto& path : paths1)
+
+    for (int i = 1; i < static_cast<int>(paths1.size()); i++)
     {
-        method2_paths.push_back(path);
+        method2_paths.push_back(paths1[i]);
     }
 
-    // 添加combing travel回到最优点
+    // 删除method1_paths和method2_paths最后面的移动路径，只保留到最后一条挤出路径
     {
-        // 获取当前位置（method2_paths的最后一个点）
-        Point2LL current_pos = optimal_point; // 默认位置
-        if (!method2_paths.empty())
+        // 处理method1_paths：从后往前删除移动路径，直到遇到挤出路径
+        while (!method1_paths.empty() && method1_paths.back().isTravelPath())
         {
-            const auto& last_path = method2_paths.back();
-            if (!last_path.points.empty())
+            method1_paths.pop_back();
+        }
+
+        // 处理method2_paths：从后往前删除移动路径，直到遇到挤出路径
+        while (!method2_paths.empty() && method2_paths.back().isTravelPath())
+        {
+            method2_paths.pop_back();
+        }
+    }
+
+    // 为method1_paths和method2_paths添加使用combing创建的travel路径到next_layer_start_point
+    {
+        // 为method1_paths添加combing travel到下一层起始点
+        {
+            // 获取当前位置（method1_paths的最后一个点）
+            Point2LL current_pos = optimal_point; // 默认位置
+            if (!method1_paths.empty())
             {
-                current_pos = last_path.points.back().toPoint2LL();
+                const auto& last_path = method1_paths.back();
+                if (!last_path.points.empty())
+                {
+                    current_pos = last_path.points.back().toPoint2LL();
+                }
+            }
+
+            // 使用combing创建travel路径
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            for (const auto& travel_path : combing_travels)
+            {
+                method1_paths.push_back(travel_path);
             }
         }
 
-        // 使用combing创建travel路径
-        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, optimal_point, layer_z, getExtruder());
-        for (const auto& travel_path : combing_travels)
+        // 为method2_paths添加combing travel到下一层起始点
         {
-            method2_paths.push_back(travel_path);
+            // 获取当前位置（method2_paths的最后一个点）
+            Point2LL current_pos = optimal_point; // 默认位置
+            if (!method2_paths.empty())
+            {
+                const auto& last_path = method2_paths.back();
+                if (!last_path.points.empty())
+                {
+                    current_pos = last_path.points.back().toPoint2LL();
+                }
+            }
+
+            // 使用combing创建travel路径
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            for (const auto& travel_path : combing_travels)
+            {
+                method2_paths.push_back(travel_path);
+            }
         }
     }
 
-    // 在method1_paths末尾添加combing travel到下一层起始点
+
+
+
+    // 删除method1_paths和method2_paths最后面的移动路径，只保留到最后一条挤出路径
     {
-        // 获取当前位置（method1_paths的最后一个点）
-        Point2LL current_pos = optimal_point; // 默认位置
-        if (!method1_paths.empty())
+        // 处理method1_paths：从后往前删除移动路径，直到遇到挤出路径
+        while (!method1_paths.empty() && method1_paths.back().isTravelPath())
         {
-            const auto& last_path = method1_paths.back();
-            if (!last_path.points.empty())
+            method1_paths.pop_back();
+        }
+
+        // 处理method2_paths：从后往前删除移动路径，直到遇到挤出路径
+        while (!method2_paths.empty() && method2_paths.back().isTravelPath())
+        {
+            method2_paths.pop_back();
+        }
+    }
+
+    // 为method1_paths和method2_paths添加使用combing创建的travel路径到next_layer_start_point
+    {
+        // 为method1_paths添加combing travel到下一层起始点
+        {
+            // 获取当前位置（method1_paths的最后一个点）
+            Point2LL current_pos = optimal_point; // 默认位置
+            if (!method1_paths.empty())
             {
-                current_pos = last_path.points.back().toPoint2LL();
+                const auto& last_path = method1_paths.back();
+                if (!last_path.points.empty())
+                {
+                    current_pos = last_path.points.back().toPoint2LL();
+                }
+            }
+
+            // 使用combing创建travel路径
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            for (const auto& travel_path : combing_travels)
+            {
+                method1_paths.push_back(travel_path);
             }
         }
 
-        // 使用combing创建travel路径
-        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
-        for (const auto& travel_path : combing_travels)
+        // 为method2_paths添加combing travel到下一层起始点
         {
-            method1_paths.push_back(travel_path);
-        }
-    }
-
-    // 在method2_paths末尾添加combing travel到下一层起始点
-    {
-        // 获取当前位置（method2_paths的最后一个点）
-        Point2LL current_pos = optimal_point; // 默认位置
-        if (!method2_paths.empty())
-        {
-            const auto& last_path = method2_paths.back();
-            if (!last_path.points.empty())
+            // 获取当前位置（method2_paths的最后一个点）
+            Point2LL current_pos = optimal_point; // 默认位置
+            if (!method2_paths.empty())
             {
-                current_pos = last_path.points.back().toPoint2LL();
+                const auto& last_path = method2_paths.back();
+                if (!last_path.points.empty())
+                {
+                    current_pos = last_path.points.back().toPoint2LL();
+                }
+            }
+
+            // 使用combing创建travel路径
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            for (const auto& travel_path : combing_travels)
+            {
+                method2_paths.push_back(travel_path);
             }
         }
-
-        // 使用combing创建travel路径
-        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
-        for (const auto& travel_path : combing_travels)
-        {
-            method2_paths.push_back(travel_path);
-        }
     }
+
 
     // === 步骤4：评分算法 ===
     auto calculateScore = [](const std::vector<GCodePath>& paths) -> double
