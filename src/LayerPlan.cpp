@@ -4390,6 +4390,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         if (last_type == PrintFeatureType::NoneType)
         {
             last_type = path.config.getPrintFeatureType();
+            if (last_type == PrintFeatureType::OuterWall) return;
             temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
             paths_to_remove.insert(paths_to_remove.begin(), i);
         }
