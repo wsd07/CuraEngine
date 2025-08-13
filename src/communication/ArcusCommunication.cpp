@@ -272,7 +272,7 @@ ArcusCommunication::ArcusCommunication()
 
 ArcusCommunication::~ArcusCommunication()
 {
-    spdlog::info("Closing connection.");
+    CURA_INFO("Closing connection.");
     private_data->socket->close();
     delete private_data->socket;
 }
@@ -293,7 +293,7 @@ void ArcusCommunication::connect(const std::string& ip, const uint16_t port)
     private_data->socket->registerMessageType(&cura::proto::SlicingFinished::default_instance());
     private_data->socket->registerMessageType(&cura::proto::SettingExtruder::default_instance());
 
-    spdlog::info("Connecting to {}:{}", ip, port);
+    CURA_INFO("Connecting to {}:{}", ip, port);
     private_data->socket->connect(ip, port);
     auto socket_state = private_data->socket->getState();
     while (socket_state != Arcus::SocketState::Connected && socket_state != Arcus::SocketState::Error)
@@ -303,7 +303,7 @@ void ArcusCommunication::connect(const std::string& ip, const uint16_t port)
     }
     if (socket_state == Arcus::SocketState::Connected)
     {
-        spdlog::info("Connected to {}:{}", ip, port);
+        CURA_INFO("Connected to {}:{}", ip, port);
     }
 }
 
@@ -396,7 +396,7 @@ void ArcusCommunication::sendOptimizedLayerData()
     {
         return;
     }
-    spdlog::info("Sending {} layers.", data.current_layer_count);
+    CURA_INFO("Sending {} layers.", data.current_layer_count);
 
     for (const auto& entry : data.slice_data) // Note: This is in no particular order!
     {

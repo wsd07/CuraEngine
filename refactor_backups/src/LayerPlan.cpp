@@ -4623,8 +4623,12 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     {
         paths1.push_back(temp_extrusion_paths[i]);
     }
-    for (size_t i = best_path_idx + 1; i < temp_extrusion_paths.size(); i++)
+    for (size_t i = best_path_idx; i < temp_extrusion_paths.size(); i++)
     {
+        if (need_split && i == best_path_idx)
+        {
+            continue; // 跳过path2，因为它的起点和终点相同，不需要
+        }
         paths2.push_back(temp_extrusion_paths[i]);
     }
 

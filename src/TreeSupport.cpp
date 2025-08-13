@@ -121,7 +121,7 @@ void TreeSupport::generateSupportAreas(SliceDataStorage& storage)
         additional_required_support_area = std::vector<Shape>(storage.support.supportLayers.size(), Shape());
 
 
-        spdlog::info("Processing support tree mesh group {} of {} containing {} meshes.", counter + 1, grouped_meshes.size(), grouped_meshes[counter].second.size());
+        CURA_INFO("Processing support tree mesh group {} of {} containing {} meshes.", counter + 1, grouped_meshes.size(), grouped_meshes[counter].second.size());
         std::vector<Shape> exclude(storage.support.supportLayers.size());
         auto t_start = std::chrono::high_resolution_clock::now();
 
@@ -159,7 +159,7 @@ void TreeSupport::generateSupportAreas(SliceDataStorage& storage)
         const LayerIndex max_required_layer = precalculate(storage, processing.second);
         if (max_required_layer < 0)
         {
-            spdlog::info("Support tree mesh group {} does not have any overhang. Skipping tree support generation for this support tree mesh group.", counter + 1);
+            CURA_INFO("Support tree mesh group {} does not have any overhang. Skipping tree support generation for this support tree mesh group.", counter + 1);
             continue; // If there is no overhang to support, skip these meshes
         }
         const auto t_precalc = std::chrono::high_resolution_clock::now();
@@ -189,7 +189,7 @@ void TreeSupport::generateSupportAreas(SliceDataStorage& storage)
         const auto dur_place = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_place - t_path).count();
         const auto dur_draw = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_draw - t_place).count();
         const auto dur_total = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_draw - t_start).count();
-        spdlog::info(
+        CURA_INFO(
             "Total time used creating Tree support for the currently grouped meshes: {} ms. Different subtasks:\n"
             "Calculating Avoidance: {} ms Creating inital influence areas: {} ms Influence area creation: {} ms Placement of Points in InfluenceAreas: {} ms Drawing result as "
             "support {} ms",
@@ -1375,7 +1375,7 @@ void TreeSupport::createLayerPathing(std::vector<std::set<TreeSupportElement*>>&
         Progress::messageProgress(Progress::Stage::SUPPORT, progress_total * progress_multiplier + progress_offset, TREE_PROGRESS_TOTAL);
     }
 
-    spdlog::info("Time spent with creating influence areas' subtasks: Increasing areas {} ms merging areas: {} ms", dur_inc.count() / 1000000, dur_merge.count() / 1000000);
+    CURA_INFO("Time spent with creating influence areas' subtasks: Increasing areas {} ms merging areas: {} ms", dur_inc.count() / 1000000, dur_merge.count() / 1000000);
 }
 
 void TreeSupport::setPointsOnAreas(const TreeSupportElement* elem)
@@ -2448,7 +2448,7 @@ void TreeSupport::drawAreas(std::vector<std::set<TreeSupportElement*>>& move_bou
     const auto dur_drop = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_drop - t_smooth).count();
     const auto dur_filter = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_filter - t_drop).count();
     const auto dur_finalize = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_filter).count();
-    spdlog::info(
+    CURA_INFO(
         "Time used for drawing subfuctions: generateBranchAreas: {} ms smoothBranchAreas: {} ms dropNonGraciousAreas: {} ms filterFloatingLines: {} ms "
         "finalizeInterfaceAndSupportAreas {} ms",
         dur_gen_tips,

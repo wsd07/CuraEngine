@@ -25,7 +25,7 @@ namespace cura
 EmscriptenCommunication::EmscriptenCommunication(const std::vector<std::string>& arguments)
     : CommandLine(arguments)
 {
-    spdlog::info("Emscripten communication initialized");
+    CURA_INFO("Emscripten communication initialized");
     if (auto progress_flag = ranges::find(arguments_, "--progress_cb"); progress_flag != arguments_.end())
     {
         progress_handler_ = *ranges::next(progress_flag);
@@ -98,7 +98,7 @@ std::string EmscriptenCommunication::createSliceInfoMessage()
     for (size_t extruder_nr = 0; extruder_nr < Application::getInstance().current_slice_->scene.extruders.size(); extruder_nr++)
     {
         const double value = FffProcessor::getInstance()->getTotalFilamentUsed(static_cast<int>(extruder_nr));
-        spdlog::info("Extruder {} used {} [mm] of filament", extruder_nr, value);
+        CURA_INFO("Extruder {} used {} [mm] of filament", extruder_nr, value);
         rapidjson::Value extruder_id(fmt::format("{}", extruder_nr).c_str(), allocator);
         rapidjson::Value extruder_material_estimate(value);
         material_estimates_json.AddMember(extruder_id, extruder_material_estimate, allocator);

@@ -23,6 +23,7 @@
 #include "ExtruderTrain.h"
 #include "FffGcodeWriter.h"
 #include "LayerPlan.h"
+#include "utils/DebugManager.h"
 #include "utils/views/convert.h"
 #include "utils/views/dfs.h"
 
@@ -103,6 +104,10 @@ bool InsetOrderOptimizer::addToLayer()
     const bool reverse = shouldReversePath(use_one_extruder, current_extruder_is_wall_x, outer_to_inner);
     const bool use_shortest_for_inner_walls = outer_to_inner;
     auto walls_to_be_added = getWallsToBeAdded(reverse, use_one_extruder);
+
+    // === 新增：flip_wall_printing_order参数控制同一层墙体内多边形的打印顺序 ===
+    const bool flip_wall_printing_order = settings_.get<bool>("flip_wall_printing_order");
+    CURA_DEBUG(WALL_COMPUTATION, "flip_wall_printing_order={}, 控制同一层墙体内多边形的打印顺序", flip_wall_printing_order);
 
     auto order = pack_by_inset ? getInsetOrder(walls_to_be_added, outer_to_inner) : getRegionOrder(walls_to_be_added, outer_to_inner);
 
@@ -186,8 +191,26 @@ bool InsetOrderOptimizer::addToLayer()
     bool added_something = false;
 
     constexpr bool detect_loops = false;
-    constexpr Shape* combing_boundary = nullptr;
+
+    // === 修复：为beading路径优化提供combing边界，避免穿越模型的travel ===
+    const Shape* combing_boundary = nullptr;
+    if (gcode_layer_.getCombBoundaryInside() && !gcode_layer_.getCombBoundaryInside()->empty())
+    {
+        combing_boundary = gcode_layer_.getCombBoundaryInside();
+        CURA_DEBUG(WALL_COMPUTATION, "InsetOrderOptimizer使用combing边界，避免穿越模型的travel路径");
+    }
+    else
+    {
+        CURA_DEBUG(WALL_COMPUTATION, "InsetOrderOptimizer未找到combing边界，使用直线travel");
+    }
+
     const auto group_outer_walls = settings_.get<bool>("group_outer_walls");
+
+    // === 应用flip_wall_printing_order参数：控制同一层墙体内多边形的打印顺序 ===
+    // 注意：这里的reverse控制的是路径方向，flip_wall_printing_order控制的是多边形顺序
+    // 我们需要将flip_wall_printing_order作为reverse_direction传递给PathOrderOptimizer
+    const bool reverse_polygon_order = flip_wall_printing_order;
+
     // When we alternate walls, also alternate the direction at which the first wall starts in.
     // On even layers we start with normal direction, on odd layers with inverted direction.
     PathOrderOptimizer<const ExtrusionLine*> order_optimizer(
@@ -195,7 +218,7 @@ bool InsetOrderOptimizer::addToLayer()
         z_seam_config_,
         detect_loops,
         combing_boundary,
-        reverse,
+        reverse_polygon_order,  // 使用flip_wall_printing_order控制多边形顺序
         order,
         group_outer_walls,
         disallowed_areas_for_seams_,

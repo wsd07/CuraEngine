@@ -28,6 +28,7 @@
 #include "pathPlanning/CombPaths.h"
 #include "plugins/slots.h"
 #include "raft.h" // getTotalExtraLayers
+#include "utils/DebugManager.h"
 #include "range/v3/view/chunk_by.hpp"
 #include "settings/types/Ratio.h"
 #include "settings/HeightParameterGraph.h"
@@ -46,6 +47,52 @@ namespace cura
 
 constexpr int MINIMUM_LINE_LENGTH = 5; // in uM. Generated lines shorter than this may be discarded
 constexpr int MINIMUM_SQUARED_LINE_LENGTH = MINIMUM_LINE_LENGTH * MINIMUM_LINE_LENGTH;
+
+/*!
+ * \brief 从SliceLayerPart中提取外墙（inset_idx == 0）的多边形
+ * \param part 要处理的层部分
+ * \return 外墙多边形集合
+ */
+Shape extractWall0Polygons(const SliceLayerPart& part)
+{
+    Shape wall0_polygons;
+
+    // 遍历所有 wall_toolpaths
+    for (const VariableWidthLines& wall_lines : part.wall_toolpaths)
+    {
+        for (const ExtrusionLine& line : wall_lines)
+        {
+            // 只处理外墙（inset_idx == 0）
+            if (line.inset_idx_ == 0 && !line.junctions_.empty())
+            {
+                Polygon polygon;
+
+                // 将 ExtrusionJunction 转换为 Point2LL
+                for (const ExtrusionJunction& junction : line.junctions_)
+                {
+                    polygon.push_back(junction.p_);
+                }
+
+                // 处理闭合多边形
+                if (line.is_closed_ && polygon.size() >= 3)
+                {
+                    if (polygon.front() != polygon.back())
+                    {
+                        polygon.push_back(polygon.front());
+                    }
+                }
+
+                // 只添加有效的多边形（至少3个点）
+                if (polygon.size() >= 3)
+                {
+                    wall0_polygons.push_back(polygon);
+                }
+            }
+        }
+    }
+
+    return wall0_polygons;
+}
 
 
 
@@ -232,19 +279,42 @@ Shape LayerPlan::computeCombBoundary(const CombBoundary boundary_type)
                             // 获取 retraction_combing_offset 参数
                             coord_t combing_offset = mesh.settings.get<coord_t>("retraction_combing_offset");
 
-                            // 回退到使用 part.outline（向后兼容）
-                            part_combing_boundary = part.outline.offset(combing_offset);
-                        }
-                        else if (combing_mode == CombingMode::NO_SKIN) // Add the increased outline offset, subtract skin (infill and part of the inner walls)
-                        {
-                            part_combing_boundary = part_combing_boundary.difference(part.inner_area.difference(part.infill_area));
-                        }
-                        else if (combing_mode == CombingMode::NO_OUTER_SURFACES)
-                        {
-                            for (const SliceLayerPart& outer_surface_part : layer.parts)
+                            CURA_DEBUG(PATH_PLANNING, "[DEBUG] CombingMode::ALL detected, combing_offset=%lld, offset=%lld", combing_offset, offset);
+
+                            // 从 wall_toolpaths 中提取外墙（inset_idx == 0）的多边形
+                            Shape wall0_polygons = extractWall0Polygons(part);
+
+                            CURA_DEBUG(PATH_PLANNING, "[DEBUG] extractWall0Polygons returned %zu polygons", wall0_polygons.size());
+
+                            //直接使用模型偏移
+                            if (false)//(!wall0_polygons.empty())
                             {
-                                part_combing_boundary = part_combing_boundary.difference(outer_surface_part.top_most_surface);
-                                part_combing_boundary = part_combing_boundary.difference(outer_surface_part.bottom_most_surface);
+                                // 使用外墙多边形并应用 combing_offset
+                                part_combing_boundary = wall0_polygons.offset(combing_offset + offset);
+                                CURA_DEBUG(PATH_PLANNING, "[DEBUG] Using wall0_polygons with offset, result has %zu polygons", part_combing_boundary.size());
+                            }
+                            else
+                            {
+                                // 回退到使用 part.outline（向后兼容）
+                                part_combing_boundary = part.outline.offset(combing_offset);
+                                CURA_DEBUG(PATH_PLANNING, "[DEBUG] Fallback to part.outline, result has %zu polygons", part_combing_boundary.size());
+                            }
+                        }
+                        else
+                        {
+                            part_combing_boundary = part.outline.offset(offset);
+
+                            if (combing_mode == CombingMode::NO_SKIN) // Add the increased outline offset, subtract skin (infill and part of the inner walls)
+                            {
+                                part_combing_boundary = part_combing_boundary.difference(part.inner_area.difference(part.infill_area));
+                            }
+                            else if (combing_mode == CombingMode::NO_OUTER_SURFACES)
+                            {
+                                for (const SliceLayerPart& outer_surface_part : layer.parts)
+                                {
+                                    part_combing_boundary = part_combing_boundary.difference(outer_surface_part.top_most_surface);
+                                    part_combing_boundary = part_combing_boundary.difference(outer_surface_part.bottom_most_surface);
+                                }
                             }
                         }
                     }
@@ -2230,7 +2300,9 @@ void LayerPlan::addInfillWall(const ExtrusionLine& wall, const GCodePathConfig& 
 {
     assert(! wall.empty() && "All empty walls should have been filtered at this stage");
     ExtrusionJunction junction{ *wall.begin() };
-    addTravel(junction.p_, force_retract);
+
+    // === 修复：使用combing travel而不是直线travel ===
+    addTravel(junction.p_, force_retract);  // 这里已经使用了combing，因为addTravel内部会调用combing
 
     for (const auto& junction_n : wall)
     {
@@ -4226,7 +4298,7 @@ bool LayerPlan::getSkirtBrimIsPlanned(unsigned int extruder_nr) const
     return skirt_brim_is_processed_[extruder_nr];
 }
 
-std::vector<GCodePath> LayerPlan::createCombingTravel(const Point2LL& from_point, const Point2LL& to_point, coord_t layer_z, size_t extruder_nr)
+std::vector<GCodePath> LayerPlan::createCombingTravel(const Point2LL& from_point, const Point2LL& to_point, coord_t layer_z, size_t extruder_nr, bool retract)
 {
     std::vector<GCodePath> travel_paths;
 
@@ -4248,7 +4320,7 @@ std::vector<GCodePath> LayerPlan::createCombingTravel(const Point2LL& from_point
         simple_travel.space_fill_type = SpaceFillType::None;
         simple_travel.speed_factor = 1.0_r;
         simple_travel.speed_back_pressure_factor = 1.0_r;
-        simple_travel.retract = false;
+        simple_travel.retract = true;
         simple_travel.unretract_before_last_travel_move = false;
         simple_travel.perform_z_hop = false;
         simple_travel.points.emplace_back(Point3LL(to_point.X, to_point.Y, layer_z));
@@ -4294,7 +4366,7 @@ std::vector<GCodePath> LayerPlan::createCombingTravel(const Point2LL& from_point
                 travel_segment.space_fill_type = SpaceFillType::None;
                 travel_segment.speed_factor = 1.0_r;
                 travel_segment.speed_back_pressure_factor = 1.0_r;
-                travel_segment.retract = false;
+                travel_segment.retract = retract;
                 travel_segment.unretract_before_last_travel_move = unretract_before_last_travel_move;
                 travel_segment.perform_z_hop = comb_paths.throughAir;
                 travel_segment.points.emplace_back(Point3LL(point.X, point.Y, layer_z));
@@ -4311,7 +4383,7 @@ std::vector<GCodePath> LayerPlan::createCombingTravel(const Point2LL& from_point
         simple_travel.space_fill_type = SpaceFillType::None;
         simple_travel.speed_factor = 1.0_r;
         simple_travel.speed_back_pressure_factor = 1.0_r;
-        simple_travel.retract = false;
+        simple_travel.retract = true;
         simple_travel.unretract_before_last_travel_move = false;
         simple_travel.perform_z_hop = false;
         simple_travel.points.emplace_back(Point3LL(to_point.X, to_point.Y, layer_z));
@@ -4325,6 +4397,8 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
 {
     // 只对非螺旋模式的层进行优化
     const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
+    bool retract = (Application::getInstance().current_slice_->scene.current_mesh_group->meshes.size()>1) ||
+        mesh_group_settings.get<bool>("travel_retract_before_outer_wall");
     Point2LL original_start_point;
 
     // 检查是否为螺旋模式
@@ -4395,7 +4469,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
             paths_to_remove.insert(paths_to_remove.begin(), i);
         }
         // 如果是相同类型的挤出路径，继续添加
-        else if (path.config.getPrintFeatureType() == PrintFeatureType::Skin || path.config.getPrintFeatureType() == PrintFeatureType::Infill)
+        else if (path.config.getPrintFeatureType() == PrintFeatureType::Skin || path.config.getPrintFeatureType() == PrintFeatureType::Infill|| path.config.getPrintFeatureType() == PrintFeatureType::InnerWall)
         {
             temp_extrusion_paths.insert(temp_extrusion_paths.begin(), path);
             paths_to_remove.insert(paths_to_remove.begin(), i);
@@ -4625,6 +4699,10 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
     }
     for (size_t i = best_path_idx; i < temp_extrusion_paths.size(); i++)
     {
+        if (split_needed && i == best_path_idx)
+        {
+            continue; // 跳过path2，因为它的起点和终点相同，不需要
+        }
         paths2.push_back(temp_extrusion_paths[i]);
     }
 
@@ -4670,7 +4748,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         }
 
         // 使用combing创建travel路径
-        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, original_end, layer_z, getExtruder());
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, original_end, layer_z, getExtruder(), retract);
         for (const auto& travel_path : combing_travels)
         {
             method1_paths.push_back(travel_path);
@@ -4725,7 +4803,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         }
 
         // 使用combing创建travel路径
-        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, original_start, layer_z, getExtruder());
+        std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, original_start, layer_z, getExtruder(), retract);
         for (const auto& travel_path : combing_travels)
         {
             method2_paths.push_back(travel_path);
@@ -4770,7 +4848,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
             }
 
             // 使用combing创建travel路径
-            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder(), retract);
             for (const auto& travel_path : combing_travels)
             {
                 method1_paths.push_back(travel_path);
@@ -4791,7 +4869,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
             }
 
             // 使用combing创建travel路径
-            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder(), retract);
             for (const auto& travel_path : combing_travels)
             {
                 method2_paths.push_back(travel_path);
@@ -4833,7 +4911,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
             }
 
             // 使用combing创建travel路径
-            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder(), retract);
             for (const auto& travel_path : combing_travels)
             {
                 method1_paths.push_back(travel_path);
@@ -4854,7 +4932,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
             }
 
             // 使用combing创建travel路径
-            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder());
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, next_layer_start_point, layer_z, getExtruder(), retract);
             for (const auto& travel_path : combing_travels)
             {
                 method2_paths.push_back(travel_path);
@@ -4959,7 +5037,7 @@ void LayerPlan::optimizeLayerEndForNextLayerStart(const Point2LL& next_layer_sta
         if (vSize2(new_start - current_pos) > 100) // 0.1mm的容差
         {
             // 使用combing创建travel路径
-            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, new_start, layer_z, getExtruder());
+            std::vector<GCodePath> combing_travels = createCombingTravel(current_pos, new_start, layer_z, getExtruder(), retract);
             for (const auto& travel_path : combing_travels)
             {
                 last_extruder_plan.paths_.push_back(travel_path);

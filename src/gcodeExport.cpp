@@ -1939,12 +1939,12 @@ void GCodeExport::finalize(const char* endCode)
     writeCode(endCode);
     int64_t print_time = getSumTotalPrintTimes();
     int mat_0 = getTotalFilamentUsed(0);
-    spdlog::info("Print time (s): {}", print_time);
-    spdlog::info("Print time (hr|min|s): {}h {}m {}s", int(print_time / 60 / 60), int((print_time / 60) % 60), int(print_time % 60));
-    spdlog::info("Filament (mm^3): {}", mat_0);
+    CURA_INFO("Print time (s): {}", print_time);
+    CURA_INFO("Print time (hr|min|s): {}h {}m {}s", int(print_time / 60 / 60), int((print_time / 60) % 60), int(print_time % 60));
+    CURA_INFO("Filament (mm^3): {}", mat_0);
     for (int n = 1; n < MAX_EXTRUDERS; n++)
         if (getTotalFilamentUsed(n) > 0)
-            spdlog::info("Filament {}: {}", n + 1, int(getTotalFilamentUsed(n)));
+            CURA_INFO("Filament {}: {}", n + 1, int(getTotalFilamentUsed(n)));
     flushOutputStream();
 }
 

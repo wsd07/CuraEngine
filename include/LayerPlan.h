@@ -312,7 +312,7 @@ public:
      * \param extruder_nr 挤出机编号
      * \return 包含 combing 路径的 GCodePath 向量
      */
-    std::vector<GCodePath> createCombingTravel(const Point2LL& from_point, const Point2LL& to_point, coord_t layer_z, size_t extruder_nr);
+    std::vector<GCodePath> createCombingTravel(const Point2LL& from_point, const Point2LL& to_point, coord_t layer_z, size_t extruder_nr, bool retract = true);
 
     /*!
      * Get the destination state of the first travel move.

@@ -11,6 +11,7 @@
 
 #include "Application.h" //To get the communication channel to send progress through.
 #include "communication/Communication.h" //To send progress through the communication channel.
+#include "utils/DebugManager.h"
 #include "utils/gettime.h"
 
 namespace cura
@@ -49,7 +50,7 @@ void Progress::messageProgressStage(Progress::Stage stage, TimeKeeper* time_keep
     {
         if (static_cast<int>(stage) > 0)
         {
-            spdlog::info("Progress: {} accomplished in {:03.3f}s", names.at(static_cast<size_t>(stage) - 1), time_keeper->restart());
+            CURA_INFO("Progress: {} accomplished in {:03.3f}s", names.at(static_cast<size_t>(stage) - 1), time_keeper->restart());
         }
         else
         {
@@ -58,7 +59,7 @@ void Progress::messageProgressStage(Progress::Stage stage, TimeKeeper* time_keep
 
         if (static_cast<int>(stage) < static_cast<int>(Stage::FINISH))
         {
-            spdlog::info("Starting {}...", names.at(static_cast<size_t>(stage)));
+            CURA_INFO("Starting {}...", names.at(static_cast<size_t>(stage)));
         }
     }
 }
@@ -76,13 +77,13 @@ void Progress::messageProgressLayer(LayerIndex layer_nr, size_t total_layers, do
     {
         if (first_skipped_layer)
         {
-            spdlog::info("Skipped time reporting for layers [{}...{}]", first_skipped_layer.value(), layer_nr);
+            CURA_INFO("Skipped time reporting for layers [{}...{}]", first_skipped_layer.value(), layer_nr);
             first_skipped_layer.reset();
         }
 
         messageProgress(Stage::EXPORT, std::max(layer_nr.value, LayerIndex::value_type(0)) + 1, total_layers);
 
-        spdlog::info("┌ Layer export [{}] accomplished in {:03.3f}s", layer_nr, total_time);
+        CURA_INFO("┌ Layer export [{}] accomplished in {:03.3f}s", layer_nr, total_time);
 
         size_t padding = 0;
         auto iterator_max_size = std::max_element(
@@ -98,7 +99,7 @@ void Progress::messageProgressLayer(LayerIndex layer_nr, size_t total_layers, do
 
             for (const auto& [index, time] : stages | ranges::views::enumerate)
             {
-                spdlog::info("{}── {}:{} {:03.3f}s", index < stages.size() - 1 ? "├" : "└", time.stage, std::string(padding - time.stage.size(), ' '), time.duration);
+                CURA_INFO("{}── {}:{} {:03.3f}s", index < stages.size() - 1 ? "├" : "└", time.stage, std::string(padding - time.stage.size(), ' '), time.duration);
             }
         }
     }

@@ -290,7 +290,7 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
         auto z_seam_points = mesh.settings.get<std::vector<Point3LL>>("draw_z_seam_points");
         if (!z_seam_points.empty())
         {
-            CURA_INFO("=== 螺旋模式自定义Z接缝点处理 ===");
+            //CURA_INFO("=== 螺旋模式自定义Z接缝点处理 ===");
             CURA_DEBUG(GCODE_GENERATION, "层号={}, 层Z={:.2f}mm, 模型Z={:.2f}mm", layer_nr, INT2MM(layer_z), INT2MM(model_z));
 
             // 按Z坐标排序
@@ -301,7 +301,7 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
             const coord_t min_z = sorted_points.front().z_;
             const coord_t max_z = sorted_points.back().z_;
 
-            CURA_INFO("Z接缝点范围: {:.2f}mm - {:.2f}mm", INT2MM(min_z), INT2MM(max_z));
+            //CURA_INFO("Z接缝点范围: {:.2f}mm - {:.2f}mm", INT2MM(min_z), INT2MM(max_z));
 
             Point2LL target_seam_pos;
             bool use_custom_seam = false;
@@ -311,8 +311,8 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
                 // 低于最低点：使用最低点的XY坐标
                 target_seam_pos = Point2LL(sorted_points.front().x_, sorted_points.front().y_);
                 use_custom_seam = true;
-                CURA_INFO("模型Z低于最低点，使用最低点: ({:.2f}, {:.2f})",
-                           INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
+                //CURA_INFO("模型Z低于最低点，使用最低点: ({:.2f}, {:.2f})",
+                //           INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
             }
             else if (model_z > max_z)
             {
@@ -323,14 +323,14 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
                     // grow=true：使用最高点的XY坐标
                     target_seam_pos = Point2LL(sorted_points.back().x_, sorted_points.back().y_);
                     use_custom_seam = true;
-                    CURA_INFO("模型Z高于最高点，grow=true，使用最高点: ({:.2f}, {:.2f})",
-                               INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
+                    //CURA_INFO("模型Z高于最高点，grow=true，使用最高点: ({:.2f}, {:.2f})",
+                    //           INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
                 }
                 else
                 {
                     // grow=false：使用常规螺旋连续性逻辑
                     use_custom_seam = false;
-                    CURA_INFO("模型Z高于最高点，grow=false，使用常规螺旋逻辑");
+                    //CURA_INFO("模型Z高于最高点，grow=false，使用常规螺旋逻辑");
                 }
             }
             else
@@ -353,13 +353,13 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
                 {
                     target_seam_pos = interpolated_pos.value();
                     use_custom_seam = true;
-                    CURA_INFO("模型Z在范围内，插值成功: ({:.2f}, {:.2f})",
-                               INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
+                    //CURA_INFO("模型Z在范围内，插值成功: ({:.2f}, {:.2f})",
+                    //           INT2MM(target_seam_pos.X), INT2MM(target_seam_pos.Y));
                 }
                 else
                 {
                     use_custom_seam = false;
-                    CURA_INFO("模型Z在范围内，但插值失败，使用常规逻辑");
+                    //CURA_INFO("模型Z在范围内，但插值失败，使用常规逻辑");
                 }
             }
 
@@ -367,7 +367,7 @@ unsigned int FffGcodeWriter::findSpiralizedLayerSeamVertexIndex(const SliceDataS
             {
                 // 在螺旋wall上找到最接近目标位置的顶点
                 size_t custom_seam_idx = PolygonUtils::findClosest(target_seam_pos, layer.parts[0].spiral_wall[0] ,PolygonUtils::no_penalty_function, mesh.settings.get<bool>("z_seam_point_interpolation")).point_idx_;
-                CURA_INFO("螺旋模式使用自定义接缝点，顶点索引: {}", custom_seam_idx);
+                //CURA_INFO("螺旋模式使用自定义接缝点，顶点索引: {}", custom_seam_idx);
                 return custom_seam_idx;
             }
         }
@@ -3310,11 +3310,11 @@ bool FffGcodeWriter::processInsets(
                 // 使用特殊的螺旋过渡模式，从0流量开始线性增加
                 gcode_layer.addSpiralTransitionWall(part.spiral_wall, mesh_config.inset0_config, mesh.settings, spiral_start_vertex);
 
-                CURA_INFO("【螺旋过渡】第{}层，使用平滑Z过渡模式，单墙从上一层高度线性提升", gcode_layer.getLayerNr());
+                //CURA_INFO("【螺旋过渡】第{}层，使用平滑Z过渡模式，单墙从上一层高度线性提升", gcode_layer.getLayerNr());
             }
             else
             {
-                CURA_INFO("【螺旋过渡】第{}层，使用传统双墙过渡模式", gcode_layer.getLayerNr());
+                //CURA_INFO("【螺旋过渡】第{}层，使用传统双墙过渡模式", gcode_layer.getLayerNr());
             }
         }
     }

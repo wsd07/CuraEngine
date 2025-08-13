@@ -59,6 +59,7 @@ void DebugManager::enableAll()
     enabled_categories_.insert(Category::LAYER_PLAN);
     enabled_categories_.insert(Category::TRAVEL_OPTIMIZATION);
     enabled_categories_.insert(Category::SEAM_PLACEMENT);
+    enabled_categories_.insert(Category::COMB);
     enabled_categories_.insert(Category::GEOMETRY);
     enabled_categories_.insert(Category::POLYGON_PROCESSING);
     enabled_categories_.insert(Category::MESH_PROCESSING);
@@ -129,6 +130,7 @@ std::string DebugManager::getCategoryName(Category category)
         {Category::LAYER_PLAN, "LAYER_PLAN"},
         {Category::TRAVEL_OPTIMIZATION, "TRAVEL_OPTIMIZATION"},
         {Category::SEAM_PLACEMENT, "SEAM_PLACEMENT"},
+        {Category::COMB, "COMB"},
         {Category::GEOMETRY, "GEOMETRY"},
         {Category::POLYGON_PROCESSING, "POLYGON_PROCESSING"},
         {Category::MESH_PROCESSING, "MESH_PROCESSING"},
@@ -165,6 +167,7 @@ DebugManager::Category DebugManager::getCategoryFromString(const std::string& na
         {"LAYER_PLAN", Category::LAYER_PLAN},
         {"TRAVEL_OPTIMIZATION", Category::TRAVEL_OPTIMIZATION},
         {"SEAM_PLACEMENT", Category::SEAM_PLACEMENT},
+        {"COMB", Category::COMB},
         {"GEOMETRY", Category::GEOMETRY},
         {"POLYGON_PROCESSING", Category::POLYGON_PROCESSING},
         {"MESH_PROCESSING", Category::MESH_PROCESSING},

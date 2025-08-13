@@ -19,6 +19,7 @@
 #include "settings/AdaptiveLayerHeights.h"
 #include "settings/EnumSettings.h"
 #include "settings/types/LayerIndex.h"
+#include "utils/DebugManager.h"
 #include "utils/Simplify.h"
 #include "utils/SparsePointGridInclusive.h"
 #include "utils/ThreadPool.h"
@@ -825,11 +826,11 @@ Slicer::Slicer(Mesh* i_mesh, const coord_t thickness, const size_t slice_layer_c
 
     buildSegments(*mesh, zbbox, slicing_tolerance, layers);
 
-    spdlog::info("Slice of mesh took {:03.3f} seconds", slice_timer.restart());
+    CURA_INFO("Slice of mesh took {:03.3f} seconds", slice_timer.restart());
 
     makePolygons(*i_mesh, slicing_tolerance, layers);
     scripta::log("sliced_polygons", layers, SectionType::NA);
-    spdlog::info("Make polygons took {:03.3f} seconds", slice_timer.restart());
+    CURA_INFO("Make polygons took {:03.3f} seconds", slice_timer.restart());
 }
 
 void Slicer::buildSegments(const Mesh& mesh, const std::vector<std::pair<int32_t, int32_t>>& zbbox, const SlicingTolerance& slicing_tolerance, std::vector<SlicerLayer>& layers)

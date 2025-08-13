@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "BeadingStrategy/DistributedBeadingStrategy.h"
+#include "BeadingStrategy/FixedOuterWallBeadingStrategy.h"
 #include "BeadingStrategy/LimitedBeadingStrategy.h"
 #include "BeadingStrategy/OuterWallInsetBeadingStrategy.h"
 #include "BeadingStrategy/RedistributeBeadingStrategy.h"
@@ -60,4 +61,43 @@ BeadingStrategyPtr BeadingStrategyFactory::makeStrategy(
     ret = make_unique<LimitedBeadingStrategy>(max_bead_count, std::move(ret));
     return ret;
 }
+
+BeadingStrategyPtr BeadingStrategyFactory::makeInnerWallSkinStrategy(
+    const coord_t preferred_bead_width_outer,
+    const coord_t preferred_bead_width_inner,
+    const coord_t preferred_transition_length,
+    const double transitioning_angle,
+    const bool print_thin_walls,
+    const coord_t min_bead_width,
+    const coord_t min_feature_size,
+    const Ratio wall_split_middle_threshold,
+    const Ratio wall_add_middle_threshold,
+    const coord_t max_bead_count,
+    const coord_t outer_wall_offset,
+    const int inward_distributed_center_wall_count,
+    const Ratio minimum_variable_line_ratio)
+{
+    // Create parent strategy for inner walls (same as normal strategy but without outer wall handling)
+    BeadingStrategyPtr parent_strategy = makeStrategy(
+        preferred_bead_width_inner,  // Inner walls use inner width
+        preferred_bead_width_inner,
+        preferred_transition_length,
+        transitioning_angle,
+        print_thin_walls,
+        min_bead_width,
+        min_feature_size,
+        wall_split_middle_threshold,
+        wall_add_middle_threshold,
+        max_bead_count,
+        0,  // No outer wall offset for inner strategy
+        inward_distributed_center_wall_count,
+        minimum_variable_line_ratio);
+
+    // Wrap with FixedOuterWallBeadingStrategy
+    return std::make_unique<FixedOuterWallBeadingStrategy>(
+        preferred_bead_width_outer,  // Fixed outer wall width
+        minimum_variable_line_ratio,
+        std::move(parent_strategy));
+}
+
 } // namespace cura

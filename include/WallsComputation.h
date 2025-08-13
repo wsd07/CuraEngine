@@ -82,6 +82,14 @@ private:
      * \return Modified polygon with interpolated points inserted (if applicable)
      */
     Polygon insertZSeamInterpolationPointsForSpiral(const Polygon& polygon, coord_t layer_z);
+
+    /*!
+     * Filter small wall toolpaths after beading process
+     * Removes wall paths that are shorter than minimum_polygon_circumference
+     * or have area smaller than minimum_polygon_area
+     * \param part The layer part containing wall_toolpaths to filter
+     */
+    void filterSmallWallToolpaths(SliceLayerPart* part);
 };
 } // namespace cura
 

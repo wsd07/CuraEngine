@@ -26,6 +26,7 @@
 #include "utils/polygonUtils.h"
 #include <limits>
 #include <optional>
+#include "utils/DebugManager.h"
 #include <spdlog/spdlog.h>
 #include "utils/scoring/BestElementFinder.h"
 #include "utils/scoring/CornerScoringCriterion.h"
@@ -760,7 +761,7 @@ protected:
         // 这个功能只对外轮廓wall生效，因为Z接缝是外轮廓起始点形成的痕迹
         if (path.seam_config_.draw_z_seam_enable_)
         {
-            spdlog::info("=== 外轮廓自定义Z接缝点处理开始 ===");
+            //CURA_INFO("=== 外轮廓自定义Z接缝点处理开始 ===");
 
             // 尝试获取当前层的插值接缝位置
             // ZSeamConfig内部会根据当前层Z坐标和用户设置的3D点进行插值计算
@@ -772,8 +773,8 @@ protected:
 
                 // 新策略：直接在现有顶点中查找最接近自定义位置的点
                 // 如果启用了插值功能，插值点应该已经在多边形初始化时被插入
-                spdlog::info("使用自定义接缝位置: ({:.2f}, {:.2f})",
-                           INT2MM(custom_target_pos.X), INT2MM(custom_target_pos.Y));
+                //CURA_INFO("使用自定义接缝位置: ({:.2f}, {:.2f})",
+                //           INT2MM(custom_target_pos.X), INT2MM(custom_target_pos.Y));
 
                 // 创建距离评分标准，优先选择最接近自定义位置的顶点
                 main_criterion.criterion = std::make_shared<DistanceScoringCriterion>(points, custom_target_pos);
@@ -781,7 +782,7 @@ protected:
             else
             {
                 // 插值失败（可能超出范围且grow=true），回退到默认处理方式
-                spdlog::info("插值失败，使用默认处理方式");
+                //CURA_INFO("插值失败，使用默认处理方式");
                 main_criterion.criterion = std::make_shared<DistanceScoringCriterion>(points, target_pos);
             }
         }

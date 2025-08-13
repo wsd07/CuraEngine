@@ -90,6 +90,7 @@ set(engine_SRCS # Except main.cpp.
         src/BeadingStrategy/BeadingStrategy.cpp
         src/BeadingStrategy/BeadingStrategyFactory.cpp
         src/BeadingStrategy/DistributedBeadingStrategy.cpp
+        src/BeadingStrategy/FixedOuterWallBeadingStrategy.cpp
         src/BeadingStrategy/LimitedBeadingStrategy.cpp
         src/BeadingStrategy/RedistributeBeadingStrategy.cpp
         src/BeadingStrategy/WideningBeadingStrategy.cpp

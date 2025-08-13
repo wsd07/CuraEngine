@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "settings/types/Ratio.h" //For the shrinkage percentage and scale factor.
+#include "utils/DebugManager.h"
 #include "utils/Matrix4x3D.h" //To transform the input meshes for shrinkage compensation and to align in command line mode.
 #include "utils/Point3F.h" //To accept incoming meshes with floating point vertices.
 #include "utils/gettime.h"
@@ -290,7 +291,7 @@ bool loadMeshIntoMeshGroup(MeshGroup* meshgroup, const char* filename, const Mat
         if (loadMeshSTL(&mesh, filename, transformation)) // Load it! If successful...
         {
             meshgroup->meshes.push_back(mesh);
-            spdlog::info("loading '{}' took {:03.3f} seconds", filename, load_timer.restart());
+            CURA_INFO("loading '{}' took {:03.3f} seconds", filename, load_timer.restart());
             return true;
         }
         spdlog::warn("loading '{}' failed", filename);

@@ -91,7 +91,28 @@ void LayerPlanBuffer::addConnectingTravelMove(LayerPlan* prev_layer, const Layer
     Point2LL first_location_new_layer = new_layer_destination_state->first;
 
     // 在添加层间移动之前，优化前一层的路径顺序，使其终点尽可能接近下一层起始点
-    if (newest_layer->getLayerNr() > 0 && prev_layer->extruder_plans_.size() > 0)
+    // 通过minimize_travel_before_wall0参数控制是否启用此优化
+
+    // 获取minimize_travel_before_wall0参数：优先从mesh设置获取，然后从extruder设置，最后从全局设置
+    bool minimize_travel_before_wall0 = false;
+
+    // 首先尝试从下一层的第一个打印mesh获取设置
+    std::shared_ptr<const SliceMeshStorage> first_printed_mesh = newest_layer->findFirstPrintedMesh();
+    if (first_printed_mesh)
+    {
+        minimize_travel_before_wall0 = first_printed_mesh->settings.get<bool>("minimize_travel_before_wall0");
+        spdlog::debug("minimize_travel_before_wall0从mesh设置获取: {}", minimize_travel_before_wall0);
+    }
+    else
+    {
+        // 如果没有mesh，从extruder设置获取
+        const size_t extruder_nr = prev_layer->extruder_plans_.back().extruder_nr_;
+        const Settings& extruder_settings = Application::getInstance().current_slice_->scene.extruders[extruder_nr].settings_;
+        minimize_travel_before_wall0 = extruder_settings.get<bool>("minimize_travel_before_wall0");
+        spdlog::debug("minimize_travel_before_wall0从extruder{}设置获取: {}", extruder_nr, minimize_travel_before_wall0);
+    }
+
+    if (minimize_travel_before_wall0 && newest_layer->getLayerNr() > 0 && prev_layer->extruder_plans_.size() > 0)
     {
         prev_layer->optimizeLayerEndForNextLayerStart(first_location_new_layer);
     }

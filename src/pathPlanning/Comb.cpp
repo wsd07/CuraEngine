@@ -13,6 +13,7 @@
 #include "pathPlanning/CombPaths.h"
 #include "pathPlanning/LinePolygonsCrossings.h"
 #include "sliceDataStorage.h"
+#include "utils/DebugManager.h"
 #include "utils/PolygonsPointIndex.h"
 #include "utils/SVG.h"
 #include "utils/linearAlg2D.h"
@@ -373,6 +374,18 @@ bool Comb::calc(
     if (end_inside)
     {
         // boundary to end
+        CURA_DEBUG(PATH_PLANNING, "[DEBUG] end_inside=true, checking end_crossing.dest_part_.size()=%zu", end_crossing.dest_part_.size());
+        CURA_DEBUG(PATH_PLANNING, "[DEBUG] end_inside_min=%s, end_part_idx_min=%zu", end_inside_min ? "true" : "false", end_part_idx_min);
+        CURA_DEBUG(PATH_PLANNING, "[DEBUG] end_crossing.dest_is_inside_=%s", end_crossing.dest_is_inside_ ? "true" : "false");
+
+        if (end_crossing.dest_part_.size() == 0)
+        {
+            CURA_ERROR("[ERROR] end_crossing.dest_part_ is empty! This indicates a boundary calculation inconsistency.");
+            CURA_ERROR("[ERROR] end_inside=%s, end_inside_min=%s", end_inside ? "true" : "false", end_inside_min ? "true" : "false");
+            CURA_ERROR("[ERROR] end_part_idx_min=%zu, boundary_inside_minimum_.size()=%zu", end_part_idx_min, boundary_inside_minimum_.size());
+            return false;
+        }
+
         assert(end_crossing.dest_part_.size() > 0 && "The part we end up inside when combing should have been computed already!");
         comb_paths.emplace_back();
         // If we're inside the optimal bound, first try the optimal combing path. If it fails, use the minimum path instead.
@@ -497,6 +510,9 @@ void Comb::Crossing::findCrossingInOrMid(const PartsView& partsView_inside, cons
 {
     if (dest_is_inside_)
     { // in-case
+        CURA_DEBUG(PATH_PLANNING, "[DEBUG] findCrossingInOrMid: dest_is_inside_=true, dest_part_idx_=%zu", dest_part_idx_);
+        CURA_DEBUG(PATH_PLANNING, "[DEBUG] findCrossingInOrMid: partsView_inside.size()=%zu", partsView_inside.size());
+
         // find the point on the start inside-polygon closest to the endpoint, but also kind of close to the start point
         Point2LL _dest_point(dest_point_); // copy to local variable for lambda capture
         std::function<int(Point2LL)> close_towards_start_penalty_function(
@@ -504,7 +520,16 @@ void Comb::Crossing::findCrossingInOrMid(const PartsView& partsView_inside, cons
             {
                 return vSize2((candidate - _dest_point) / 10);
             });
+
+        if (dest_part_idx_ >= partsView_inside.size())
+        {
+            CURA_ERROR("[ERROR] dest_part_idx_=%zu is out of range! partsView_inside.size()=%zu", dest_part_idx_, partsView_inside.size());
+            dest_part_.clear();
+            return;
+        }
+
         dest_part_ = partsView_inside.assemblePart(dest_part_idx_);
+        CURA_DEBUG(PATH_PLANNING, "[DEBUG] findCrossingInOrMid: assembled dest_part_.size()=%zu", dest_part_.size());
 
         ClosestPointPolygon boundary_crossing_point;
         { // set [result] to a point on the destination part closest to close_to (but also a bit close to _dest_point)

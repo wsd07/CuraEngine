@@ -34,6 +34,7 @@
 #include "settings/types/Ratio.h"
 #include "sliceDataStorage.h"
 #include "slicer.h"
+#include "utils/DebugManager.h"
 #include "utils/Simplify.h"
 #include "utils/ThreadPool.h"
 #include "utils/linearAlg2D.h"
@@ -555,7 +556,7 @@ Shape AreaSupport::join(const SliceDataStorage& storage, const Shape& supportLay
             adhesion_size = 0;
             break;
         default: // Also use 0.
-            spdlog::info("Unknown platform adhesion type! Please implement the width of the platform adhesion here.");
+            CURA_INFO("Unknown platform adhesion type! Please implement the width of the platform adhesion here.");
             break;
         }
         machine_volume_border = machine_volume_border.offset(-adhesion_size);

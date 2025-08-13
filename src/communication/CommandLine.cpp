@@ -99,7 +99,7 @@ void CommandLine::sendPrintTimeMaterialEstimates() const
 {
     std::vector<Duration> time_estimates = FffProcessor::getInstance()->getTotalPrintTimePerFeature();
     double sum = std::accumulate(time_estimates.begin(), time_estimates.end(), 0.0);
-    spdlog::info("Total print time: {:3}", sum);
+    CURA_INFO("Total print time: {:3}", sum);
 
     sum = 0.0;
     for (size_t extruder_nr = 0; extruder_nr < Application::getInstance().current_slice_->scene.extruders.size(); extruder_nr++)
@@ -155,7 +155,7 @@ void CommandLine::sliceNext()
                 {
                     try
                     {
-                        spdlog::info("Loaded from disk in {}", FffProcessor::getInstance()->time_keeper.restart());
+                        CURA_INFO("Loaded from disk in {}", FffProcessor::getInstance()->time_keeper.restart());
 
                         mesh_group_index++;
                         FffProcessor::getInstance()->time_keeper.restart();
@@ -172,18 +172,18 @@ void CommandLine::sliceNext()
                 }
                 else if (argument.starts_with("--force-read-parent") || argument.starts_with("--force_read_parent"))
                 {
-                    spdlog::info("From this point on, force the parser to read values of non-leaf settings, instead of skipping over them as is proper.");
+                    CURA_INFO("From this point on, force the parser to read values of non-leaf settings, instead of skipping over them as is proper.");
                     force_read_parent = true;
                 }
                 else if (argument.starts_with("--force-read-nondefault") || argument.starts_with("--force_read_nondefault"))
                 {
-                    spdlog::info(
+                    CURA_INFO(
                         "From this point on, if 'default_value' is not available, force the parser to read 'value' (instead of dropping it) to fill the used setting-values.");
                     force_read_nondefault = true;
                 }
                 else if (argument.starts_with("--end-force-read") || argument.starts_with("--end_force_read"))
                 {
-                    spdlog::info("From this point on, reset all force-XXX values to false (don't 'force read ___' anymore).");
+                    CURA_INFO("From this point on, reset all force-XXX values to false (don't 'force read ___' anymore).");
                     force_read_parent = false;
                     force_read_nondefault = false;
                 }
@@ -485,7 +485,7 @@ void CommandLine::sliceNext()
     {
 #endif // DEBUG
         slice->scene.mesh_groups[mesh_group_index].finalize();
-        spdlog::info("Loaded from disk in {:3}s\n", FffProcessor::getInstance()->time_keeper.restart());
+        CURA_INFO("Loaded from disk in {:3}s\n", FffProcessor::getInstance()->time_keeper.restart());
 
         // Start slicing.
         slice->compute();

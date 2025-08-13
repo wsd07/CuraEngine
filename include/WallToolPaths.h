@@ -131,6 +131,13 @@ protected:
     void generateSimpleWalls(const Shape& outline);
 
     /*!
+     * Generate mixed walls for INNER_WALL_SKIN mode.
+     * Outer wall uses simple offset, inner walls use BeadingStrategy.
+     * \param outline The outline to generate walls for.
+     */
+    void generateMixedWalls(const Shape& outline);
+
+    /*!
      * Insert interpolated Z seam points into polygon if conditions are met
      * \param polygon The polygon to potentially modify
      * \param settings The settings containing Z seam configuration

@@ -321,7 +321,7 @@ void TreeModelVolumes::precalculate(coord_t max_layer)
     const auto dur_col_avo = 0.001 * std::chrono::duration_cast<std::chrono::microseconds>(t_colAvo - t_avo).count();
 
 
-    spdlog::info(
+    CURA_INFO(
         "Pre-calculating collision took {} ms. Pre-calculating avoidance took {} ms. Pre-calculating accumulated Placeables with radius 0 took {} ms. Pre-calculating "
         "collision-avoidance took {} ms. ",
         dur_col,

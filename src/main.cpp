@@ -67,7 +67,7 @@ int main(int argc, char** argv)
         // Setup sentry error handling.
         sentry_options_t* options = sentry_options_new();
         sentry_options_set_dsn(options, std::string(SENTRY_URL).c_str());
-        spdlog::info("Sentry url: {}", std::string(SENTRY_URL).c_str());
+        CURA_INFO("Sentry url: {}", std::string(SENTRY_URL).c_str());
         // This is also the default-path. For further information and recommendations:
         // https://docs.sentry.io/platforms/native/configuration/options/#database-path
 #if defined(__linux__)
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
 #elif defined(_WIN64)
         const auto config_path = std::filesystem::path(fmt::format("{}\\cura\\.sentry-native", std::getenv("APPDATA")));
 #endif
-        spdlog::info("Sentry config path: {}", config_path);
+        CURA_INFO("Sentry config path: {}", config_path);
         sentry_options_set_database_path(options, std::filesystem::absolute(config_path).generic_string().c_str());
 
 #ifdef SENTRY_ENVIRONMENT
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
         // Set the actual CuraEngine version
         constexpr std::string_view cura_engine_version{ CURA_ENGINE_VERSION };
         sentry_options_set_release(options, fmt::format("curaengine@{}", cura_engine_version).c_str());
-        spdlog::info("Starting sentry");
+        CURA_INFO("Starting sentry");
         sentry_init(options);
     }
 #endif
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 #ifdef SENTRY_URL
     if (const auto use_sentry = spdlog::details::os::getenv("USE_SENTRY"); ! use_sentry.empty() && use_sentry == "1")
     {
-        spdlog::info("Closing sentry");
+        CURA_INFO("Closing sentry");
         sentry_close();
     }
 #endif

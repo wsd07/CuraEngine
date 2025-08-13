@@ -138,6 +138,10 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
         {
             WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type, layer_z);
             part->wall_toolpaths = wall_tool_paths.getToolPaths();
+
+            // === beading后小轮廓过滤（螺旋模式底层） ===
+            filterSmallWallToolpaths(part);
+
             part->inner_area = wall_tool_paths.getInnerContour();
         }
     }
@@ -146,6 +150,10 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
         spdlog::info("【墙体生成】第{}层，生成正常墙体（包含inset/infill/skin）", layer_nr_);
         WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type, layer_z);
         part->wall_toolpaths = wall_tool_paths.getToolPaths();
+
+        // === beading后小轮廓过滤 ===
+        filterSmallWallToolpaths(part);
+
         part->inner_area = wall_tool_paths.getInnerContour();
     }
 
@@ -655,6 +663,106 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
         CURA_DEBUG(WALL_COMPUTATION, "螺旋模式最近点是现有顶点，无需插入新点");
         return polygon;
     }
+}
+
+void WallsComputation::filterSmallWallToolpaths(SliceLayerPart* part)
+{
+    // === 获取过滤参数 ===
+    coord_t min_circumference = 0;
+    coord_t min_area_um2 = 0;
+
+    // 安全获取minimum_polygon_circumference参数
+    try {
+        min_circumference = settings_.get<coord_t>("minimum_polygon_circumference");
+    } catch (...) {
+        min_circumference = 0;
+    }
+
+    // 安全获取minimum_polygon_area参数
+    try {
+        double min_area_mm2 = settings_.get<double>("minimum_polygon_area");
+        min_area_um2 = static_cast<coord_t>(min_area_mm2 * 1000000.0);  // mm² -> μm²
+    } catch (...) {
+        min_area_um2 = 0;
+    }
+
+    // 如果两个参数都为0，跳过过滤
+    if (min_circumference <= 0 && min_area_um2 <= 0)
+    {
+        return;
+    }
+
+    CURA_DEBUG(WALL_COMPUTATION, "=== beading后小轮廓过滤开始（仅外墙wall0） ===");
+    CURA_DEBUG(WALL_COMPUTATION, "最小周长阈值: {:.3f}mm", INT2MM(min_circumference));
+    CURA_DEBUG(WALL_COMPUTATION, "最小面积阈值: {:.3f}mm²", INT2MM2(min_area_um2));
+
+    size_t total_removed_lines = 0;
+    size_t total_original_lines = 0;
+
+    // === 修正：只过滤外墙（wall0，即索引为0的墙体） ===
+    if (!part->wall_toolpaths.empty())
+    {
+        VariableWidthLines& wall0_lines = part->wall_toolpaths[0];  // 只处理外墙
+        size_t original_count = wall0_lines.size();
+        total_original_lines += original_count;
+
+        if (!wall0_lines.empty())
+        {
+            // 使用remove_if算法过滤小轮廓
+            auto remove_iter = std::remove_if(
+                wall0_lines.begin(),
+                wall0_lines.end(),
+                [min_circumference, min_area_um2](const ExtrusionLine& line) -> bool
+                {
+                    // 计算路径长度
+                    coord_t line_length = line.length();
+
+                    // 计算面积（仅对闭合路径）
+                    coord_t line_area = 0;
+                    if (line.is_closed_ && line.size() >= 3)
+                    {
+                        Polygon polygon = line.toPolygon();
+                        line_area = std::abs(polygon.area());
+                    }
+
+                    // 判断是否需要删除
+                    bool should_remove = false;
+
+                    // 周长判断
+                    if (min_circumference > 0 && line_length < min_circumference)
+                    {
+                        should_remove = true;
+                        CURA_DEBUG(WALL_COMPUTATION, "删除外墙路径：长度{:.3f}mm < 阈值{:.3f}mm",
+                                   INT2MM(line_length), INT2MM(min_circumference));
+                    }
+
+                    // 面积判断（仅对闭合路径）
+                    if (min_area_um2 > 0 && line.is_closed_ && line_area < min_area_um2)
+                    {
+                        should_remove = true;
+                        CURA_DEBUG(WALL_COMPUTATION, "删除外墙路径：面积{:.3f}mm² < 阈值{:.3f}mm²",
+                                   INT2MM2(line_area), INT2MM2(min_area_um2));
+                    }
+
+                    return should_remove;
+                }
+            );
+
+            // 执行删除
+            wall0_lines.erase(remove_iter, wall0_lines.end());
+
+            size_t removed_count = original_count - wall0_lines.size();
+            total_removed_lines += removed_count;
+
+            if (removed_count > 0)
+            {
+                CURA_DEBUG(WALL_COMPUTATION, "外墙过滤：删除{}条路径，剩余{}条路径",
+                           removed_count, wall0_lines.size());
+            }
+        }
+    }
+
+    CURA_DEBUG(WALL_COMPUTATION, "beading后外墙小轮廓过滤完成：删除{}条路径", total_removed_lines);
 }
 
 } // namespace cura

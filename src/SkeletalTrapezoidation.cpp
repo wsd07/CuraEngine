@@ -364,8 +364,19 @@ void SkeletalTrapezoidation::computeSegmentCellRange(
         }
     } while (edge = edge->next(), edge != cell.incident_edge());
 
+    // 检查是否找到了有效的边缘
+    if (!starting_vd_edge || !ending_vd_edge)
+    {
+        spdlog::debug("computeSegmentCellRange: 无法找到有效的边缘，source_segment: from({}, {}) to({}, {})",
+                     from.X, from.Y, to.X, to.Y);
+        throw std::runtime_error("无法找到有效的Voronoi边缘");
+    }
+
     assert(starting_vd_edge && ending_vd_edge);
-    assert(starting_vd_edge != ending_vd_edge);
+    if (starting_vd_edge == ending_vd_edge)
+    {
+        spdlog::warn("starting_vd_edge == ending_vd_edge，这可能导致问题");
+    }
 
     start_source_point = source_segment.to();
     end_source_point = source_segment.from();
@@ -436,7 +447,39 @@ void SkeletalTrapezoidation::constructFromPolygons(const Shape& polys)
         }
         else
         {
-            computeSegmentCellRange(cell, start_source_point, end_source_point, starting_vonoroi_edge, ending_vonoroi_edge, points, segments);
+            // 预检查：确保cell有有效的segment
+            if (!cell.contains_segment())
+            {
+                spdlog::warn("跳过无效的segment cell");
+                continue;
+            }
+
+            // 预检查：确保有足够的有限边
+            int finite_edge_count = 0;
+            vd_t::edge_type* edge = cell.incident_edge();
+            do
+            {
+                if (!edge->is_infinite())
+                {
+                    finite_edge_count++;
+                }
+            } while (edge = edge->next(), edge != cell.incident_edge());
+
+            if (finite_edge_count < 2)
+            {
+                spdlog::warn("跳过边数不足的segment cell (finite_edges: {})", finite_edge_count);
+                continue;
+            }
+
+            try
+            {
+                computeSegmentCellRange(cell, start_source_point, end_source_point, starting_vonoroi_edge, ending_vonoroi_edge, points, segments);
+            }
+            catch (const std::exception& e)
+            {
+                spdlog::warn("跳过有问题的segment cell: {}", e.what());
+                continue;
+            }
         }
 
         if (! starting_vonoroi_edge || ! ending_vonoroi_edge)
@@ -713,15 +756,24 @@ void SkeletalTrapezoidation::updateIsCentral()
     //              `^'-._                                    corner is obtuse.
     //                             sin a = dR / dD
 
+    spdlog::debug("=== 开始updateIsCentral处理 ===");
+    spdlog::debug("图中总边数: {}", graph_.edges.size());
+
     coord_t outer_edge_filter_length = beading_strategy_.getTransitionThickness(0) / 2;
+    spdlog::debug("outer_edge_filter_length: {}", outer_edge_filter_length);
 
     double cap = sin(beading_strategy_.getTransitioningAngle() * 0.5); // = cos(bisector_angle / 2)
+    spdlog::debug("cap值: {}", cap);
     for (edge_t& edge : graph_.edges)
     {
-        assert(edge.twin_);
+        // 检查twin指针的有效性，添加更详细的调试信息
         if (! edge.twin_)
         {
-            spdlog::warn("Encountered a Voronoi edge without twin!");
+            spdlog::warn("跳过没有twin的Voronoi边: from({}, {}) to({}, {})",
+                        edge.from_->p_.X, edge.from_->p_.Y,
+                        edge.to_->p_.X, edge.to_->p_.Y);
+            // 为没有twin的边设置默认的central状态
+            edge.data_.setIsCentral(false);
             continue;
         }
         if (edge.twin_->data_.centralIsSet())
@@ -746,6 +798,7 @@ void SkeletalTrapezoidation::updateIsCentral()
             edge.data_.setIsCentral(dR < dD * cap);
         }
     }
+    spdlog::debug("=== updateIsCentral处理完成 ===");
 }
 
 void SkeletalTrapezoidation::filterCentral(coord_t max_length)

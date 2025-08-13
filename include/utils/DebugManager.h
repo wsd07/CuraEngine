@@ -41,6 +41,7 @@ public:
         LAYER_PLAN,                 // 层规划
         TRAVEL_OPTIMIZATION,        // 行程优化
         SEAM_PLACEMENT,             // 接缝放置
+        COMB,                       // Combing路径规划
         
         // === 几何处理 ===
         GEOMETRY,                   // 几何计算

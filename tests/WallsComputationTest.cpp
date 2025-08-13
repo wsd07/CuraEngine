@@ -96,6 +96,10 @@ public:
         settings.add("wall_transition_length", "1");
         settings.add("wall_x_extruder_nr", "0");
         settings.add("wall_distribution_count", "2");
+
+        // Add parameters for small contour filtering
+        settings.add("minimum_polygon_circumference", "0");
+        settings.add("minimum_polygon_area", "0");
     }
 };
 
@@ -225,6 +229,75 @@ TEST_F(WallsComputationTest, WallToolPathsGetWeakOrder)
         has_order_info.emplace(to);
     }
     EXPECT_EQ(has_order_info.size(), n_paths) << "Every path should have order information.";
+}
+
+/*!
+ * Tests if small wall toolpaths are properly filtered after beading.
+ */
+TEST_F(WallsComputationTest, FilterSmallWallToolpaths)
+{
+    // Create a shape with a very small feature that should be filtered out
+    Shape shape_with_small_feature;
+
+    // Main large square (20x20mm)
+    shape_with_small_feature.emplace_back();
+    shape_with_small_feature.back().emplace_back(0, 0);
+    shape_with_small_feature.back().emplace_back(MM2INT(20), 0);
+    shape_with_small_feature.back().emplace_back(MM2INT(20), MM2INT(20));
+    shape_with_small_feature.back().emplace_back(0, MM2INT(20));
+
+    // Small feature (1x1mm) that should be filtered out
+    shape_with_small_feature.emplace_back();
+    shape_with_small_feature.back().emplace_back(MM2INT(25), MM2INT(5));
+    shape_with_small_feature.back().emplace_back(MM2INT(26), MM2INT(5));
+    shape_with_small_feature.back().emplace_back(MM2INT(26), MM2INT(6));
+    shape_with_small_feature.back().emplace_back(MM2INT(25), MM2INT(6));
+
+    SliceLayer layer;
+    layer.parts.emplace_back();
+    SliceLayerPart& part = layer.parts.back();
+    part.outline.push_back(shape_with_small_feature);
+
+    // Test without filtering (baseline)
+    settings.add("minimum_polygon_circumference", "0");
+    settings.add("minimum_polygon_area", "0");
+    walls_computation.generateWalls(&layer, SectionType::WALL);
+
+    size_t original_wall_count = 0;
+    for (const auto& wall_lines : part.wall_toolpaths)
+    {
+        original_wall_count += wall_lines.size();
+    }
+
+    // Reset for filtered test
+    part.wall_toolpaths.clear();
+    part.inner_area.clear();
+    part.print_outline.clear();
+
+    // Test with filtering enabled (filter paths shorter than 5mm)
+    settings.add("minimum_polygon_circumference", "5000"); // 5mm in micrometers
+    settings.add("minimum_polygon_area", "0");
+    walls_computation.generateWalls(&layer, SectionType::WALL);
+
+    size_t filtered_wall_count = 0;
+    for (const auto& wall_lines : part.wall_toolpaths)
+    {
+        filtered_wall_count += wall_lines.size();
+    }
+
+    // Verify that some walls were filtered out
+    EXPECT_LT(filtered_wall_count, original_wall_count) << "Small wall toolpaths should be filtered out.";
+    EXPECT_GT(filtered_wall_count, 0) << "Main walls should still remain.";
+
+    // Verify that all remaining walls meet the minimum length requirement
+    for (const auto& wall_lines : part.wall_toolpaths)
+    {
+        for (const auto& line : wall_lines)
+        {
+            coord_t line_length = line.length();
+            EXPECT_GE(line_length, 5000) << "All remaining walls should meet minimum length requirement.";
+        }
+    }
 }
 
 } // namespace cura

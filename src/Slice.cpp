@@ -9,6 +9,7 @@
 #endif
 
 #include "ExtruderTrain.h"
+#include "utils/DebugManager.h"
 
 namespace cura
 {
@@ -20,7 +21,7 @@ Slice::Slice(const size_t num_mesh_groups)
 
 void Slice::compute()
 {
-    spdlog::info("All settings: {}", scene.getAllSettingsString());
+    CURA_INFO("All settings: {}", scene.getAllSettingsString());
 #ifdef SENTRY_URL
     {
         sentry_set_tag("cura.machine_name", scene.settings.get<std::string>("machine_name").c_str());

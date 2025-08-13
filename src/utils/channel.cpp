@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include "utils/DebugManager.h"
 #include "utils/resources/certificate.pem.h"
 
 namespace cura::utils
@@ -22,12 +23,12 @@ std::shared_ptr<grpc::Channel> createChannel(const ChannelSetupConfiguration& co
     {
         if (actual_config.host == "localhost" || actual_config.host == "127.0.0.1")
         {
-            spdlog::info("Create local channel on port {}.", actual_config.port);
+            CURA_INFO("Create local channel on port {}.", actual_config.port);
             return grpc::InsecureChannelCredentials();
         }
         if (details::ALLOW_REMOTE_CHANNELS)
         {
-            spdlog::info("Create local channel on port {}.", actual_config.port);
+            CURA_INFO("Create local channel on port {}.", actual_config.port);
             auto creds_config = grpc::SslCredentialsOptions();
             creds_config.pem_root_certs = resources::certificate;
             return grpc::SslCredentials(creds_config);

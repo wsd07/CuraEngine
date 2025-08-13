@@ -204,13 +204,10 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
             should_use_beading_strategy = (section_type_ == SectionType::SKIN);
             break;
         case EBeadingStrategyScope::INNER_WALL_SKIN:
+            // === 新方案：使用特殊的BeadingStrategy，外墙完全固定，内墙beading ===
             // 对于skin墙体，全部使用BeadingStrategy
-            // 对于普通墙体，如果只有外墙则使用简单偏移，如果有内墙则使用BeadingStrategy
-            if (section_type_ == SectionType::SKIN) {
-                should_use_beading_strategy = true;  // skin总是使用BeadingStrategy
-            } else {
-                should_use_beading_strategy = (inset_count_ > 1);  // 只有多层墙时才使用BeadingStrategy
-            }
+            // 对于普通墙体，使用修改后的BeadingStrategy（外墙固定+内墙beading）
+            should_use_beading_strategy = true;  // 都使用BeadingStrategy，但策略不同
             break;
         case EBeadingStrategyScope::ALL:
         default:
@@ -239,19 +236,44 @@ const std::vector<VariableWidthLines>& WallToolPaths::generate()
                  beading_strategy_scope == EBeadingStrategyScope::ONLY_SKIN ? "ONLY_SKIN" : "OFF");
 
     const size_t max_bead_count = (inset_count_ < std::numeric_limits<size_t>::max() / 2) ? 2 * inset_count_ : std::numeric_limits<size_t>::max();
-    const auto beading_strat = BeadingStrategyFactory::makeStrategy(
-        bead_width_0_,
-        bead_width_x_,
-        wall_transition_length,
-        transitioning_angle,
-        print_thin_walls_,
-        safe_min_bead_width,  // 使用修复后的安全值
-        min_feature_size_,
-        wall_split_middle_threshold,
-        wall_add_middle_threshold,
-        max_bead_count,
-        wall_0_inset_,
-        wall_distribution_count);
+
+    // === 根据beading_strategy_scope创建不同的策略 ===
+    BeadingStrategyPtr beading_strat;
+    if (beading_strategy_scope == EBeadingStrategyScope::INNER_WALL_SKIN && section_type_ != SectionType::SKIN)
+    {
+        // INNER_WALL_SKIN模式：外墙完全固定，内墙beading
+        CURA_DEBUG(WALL_COMPUTATION, "创建INNER_WALL_SKIN专用BeadingStrategy：外墙固定线宽{:.3f}mm", INT2MM(bead_width_0_));
+        beading_strat = BeadingStrategyFactory::makeInnerWallSkinStrategy(
+            bead_width_0_,
+            bead_width_x_,
+            wall_transition_length,
+            transitioning_angle,
+            print_thin_walls_,
+            safe_min_bead_width,
+            min_feature_size_,
+            wall_split_middle_threshold,
+            wall_add_middle_threshold,
+            max_bead_count,
+            wall_0_inset_,
+            wall_distribution_count);
+    }
+    else
+    {
+        // 标准BeadingStrategy
+        beading_strat = BeadingStrategyFactory::makeStrategy(
+            bead_width_0_,
+            bead_width_x_,
+            wall_transition_length,
+            transitioning_angle,
+            print_thin_walls_,
+            safe_min_bead_width,  // 使用修复后的安全值
+            min_feature_size_,
+            wall_split_middle_threshold,
+            wall_add_middle_threshold,
+            max_bead_count,
+            wall_0_inset_,
+            wall_distribution_count);
+    }
     const auto transition_filter_dist = settings_.get<coord_t>("wall_transition_filter_distance");
     const auto allowed_filter_deviation = settings_.get<coord_t>("wall_transition_filter_deviation");
     SkeletalTrapezoidation wall_maker(
@@ -790,6 +812,157 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
         CURA_DEBUG(WALL_COMPUTATION, "最近点是现有顶点，无需插入新点");
         return polygon;
     }
+}
+
+void WallToolPaths::generateMixedWalls(const Shape& outline)
+{
+    // === INNER_WALL_SKIN混合模式：外墙简单偏移 + 内墙BeadingStrategy ===
+    CURA_DEBUG(WALL_COMPUTATION, "=== 开始INNER_WALL_SKIN混合墙体生成 ===");
+    CURA_DEBUG(WALL_COMPUTATION, "总墙数: {}, 外墙线宽: {}, 内墙线宽: {}", inset_count_, bead_width_0_, bead_width_x_);
+
+    toolpaths_.clear();
+    toolpaths_.resize(inset_count_);
+
+    // === 第一步：生成外墙（使用简单偏移） ===
+    CURA_DEBUG(WALL_COMPUTATION, "第一步：生成外墙（简单偏移）");
+
+    Shape current_outline = outline;
+
+    // 计算外墙偏移距离
+    coord_t outer_wall_offset = bead_width_0_ / 2;
+    if (wall_0_inset_ > 0)
+    {
+        outer_wall_offset += wall_0_inset_;  // 外墙额外内缩
+    }
+
+    // 生成外墙轮廓
+    Shape outer_wall_outline = current_outline.offset(-outer_wall_offset);
+
+    // 为外墙轮廓创建ExtrusionLine
+    for (const auto& polygon : outer_wall_outline)
+    {
+        if (polygon.size() < 3) continue;  // 跳过无效多边形
+
+        // 对外墙进行Z接缝插值点插入
+        coord_t layer_z = (layer_z_ >= 0) ? layer_z_ : layer_idx_ * settings_.get<coord_t>("layer_height");
+        Polygon processed_polygon = insertZSeamInterpolationPoints(polygon, settings_, layer_z);
+
+        ExtrusionLine extrusion_line(0, false);  // inset_idx=0, is_odd=false
+
+        for (const auto& point : processed_polygon)
+        {
+            extrusion_line.emplace_back(point, bead_width_0_, 0);  // perimeter_index=0
+        }
+
+        toolpaths_[0].emplace_back(std::move(extrusion_line));
+    }
+
+    CURA_DEBUG(WALL_COMPUTATION, "外墙生成完成：{}条路径", toolpaths_[0].size());
+
+    // === 第二步：计算内墙区域 ===
+    // 内墙区域 = 外墙轮廓向内偏移半个外墙线宽
+    Shape inner_wall_area = outer_wall_outline.offset(-bead_width_0_ / 2);
+
+    if (inner_wall_area.empty() || inset_count_ <= 1)
+    {
+        CURA_DEBUG(WALL_COMPUTATION, "没有内墙区域或只需要外墙，混合生成完成");
+        return;
+    }
+
+    // === 第三步：对内墙区域使用BeadingStrategy ===
+    CURA_DEBUG(WALL_COMPUTATION, "第三步：对内墙区域使用BeadingStrategy");
+
+    // 创建内墙的WallToolPaths实例（只处理内墙部分）
+    size_t inner_wall_count = inset_count_ - 1;  // 减去外墙
+
+    if (inner_wall_count == 0)
+    {
+        CURA_DEBUG(WALL_COMPUTATION, "没有内墙需要生成，混合生成完成");
+        return;
+    }
+
+    // === 修复：使用与原有代码完全相同的参数获取和计算方式 ===
+    // 重用已经计算好的参数，避免重复计算和不一致
+    const auto wall_transition_length = settings_.get<coord_t>("wall_transition_length");
+    const auto transitioning_angle = settings_.get<AngleRadians>("wall_transition_angle");
+
+    // 重用原有的阈值计算（已经在generate()函数中计算过）
+    const double min_even_wall_line_width = settings_.get<double>("min_even_wall_line_width");
+    const double wall_line_width_0 = settings_.get<double>("wall_line_width_0");
+    const Ratio wall_split_middle_threshold = std::max(1.0, std::min(99.0, 100.0 * (2.0 * min_even_wall_line_width - wall_line_width_0) / wall_line_width_0)) / 100.0;
+
+    const double min_odd_wall_line_width = settings_.get<double>("min_odd_wall_line_width");
+    const double wall_line_width_x = settings_.get<double>("wall_line_width_x");
+    const Ratio wall_add_middle_threshold = std::max(1.0, std::min(99.0, 100.0 * min_odd_wall_line_width / wall_line_width_x)) / 100.0;
+
+    const auto wall_distribution_count = settings_.get<int>("wall_distribution_count");
+
+    // === 修复：使用与原有代码相同的安全参数计算 ===
+    coord_t original_min_bead_width = min_bead_width_;
+    coord_t safe_min_bead_width = std::max(min_bead_width_, static_cast<coord_t>(bead_width_x_ * 0.4));
+
+    // === 修复：正确计算内墙的max_bead_count ===
+    const size_t max_bead_count = (inner_wall_count < std::numeric_limits<size_t>::max() / 2) ? 2 * inner_wall_count : std::numeric_limits<size_t>::max();
+
+    CURA_DEBUG(WALL_COMPUTATION, "内墙BeadingStrategy参数：内墙数={}, max_bead_count={}, safe_min_bead_width={:.3f}mm",
+               inner_wall_count, max_bead_count, INT2MM(safe_min_bead_width));
+
+    const auto beading_strat = BeadingStrategyFactory::makeStrategy(
+        bead_width_x_,  // 内墙使用bead_width_x_
+        bead_width_x_,
+        wall_transition_length,
+        transitioning_angle,
+        print_thin_walls_,
+        safe_min_bead_width,
+        min_feature_size_,
+        wall_split_middle_threshold,
+        wall_add_middle_threshold,
+        max_bead_count,
+        0,  // 内墙不需要额外inset
+        wall_distribution_count);
+
+    const auto transition_filter_dist = settings_.get<coord_t>("wall_transition_filter_distance");
+    const auto allowed_filter_deviation = settings_.get<coord_t>("wall_transition_filter_deviation");
+    const auto discretization_step_size = settings_.get<coord_t>("meshfix_maximum_resolution");
+
+    SkeletalTrapezoidation inner_wall_maker(
+        inner_wall_area,
+        *beading_strat,
+        beading_strat->getTransitioningAngle(),
+        discretization_step_size,
+        transition_filter_dist,
+        allowed_filter_deviation,
+        wall_transition_length,
+        layer_idx_,
+        section_type_);
+
+    std::vector<VariableWidthLines> inner_toolpaths;
+    inner_wall_maker.generateToolpaths(inner_toolpaths);
+
+    // === 第四步：合并外墙和内墙结果 ===
+    CURA_DEBUG(WALL_COMPUTATION, "第四步：合并外墙和内墙结果");
+
+    // 将内墙结果复制到正确的索引位置，并调整inset_idx
+    for (size_t inner_idx = 0; inner_idx < inner_toolpaths.size() && (inner_idx + 1) < inset_count_; inner_idx++)
+    {
+        size_t target_idx = inner_idx + 1;  // 内墙从索引1开始
+
+        for (auto& line : inner_toolpaths[inner_idx])
+        {
+            line.inset_idx_ = target_idx;  // 调整inset_idx
+            // 调整perimeter_index
+            for (auto& junction : line)
+            {
+                junction.perimeter_index_ = target_idx;
+            }
+        }
+
+        toolpaths_[target_idx] = std::move(inner_toolpaths[inner_idx]);
+
+        CURA_DEBUG(WALL_COMPUTATION, "内墙{}生成完成：{}条路径", target_idx, toolpaths_[target_idx].size());
+    }
+
+    CURA_DEBUG(WALL_COMPUTATION, "INNER_WALL_SKIN混合墙体生成完成");
 }
 
 } // namespace cura

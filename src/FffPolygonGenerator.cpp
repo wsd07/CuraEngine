@@ -102,7 +102,7 @@ bool FffPolygonGenerator::sliceModel(MeshGroup* meshgroup, TimeKeeper& timeKeepe
     storage.model_max = meshgroup->max();
     storage.model_size = storage.model_max - storage.model_min;
 
-    spdlog::info("Slicing model...");
+    CURA_INFO("Slicing model...");
 
     const Settings& mesh_group_settings = Application::getInstance().current_slice_->scene.current_mesh_group->settings;
 
@@ -558,12 +558,12 @@ void FffPolygonGenerator::processBasicWallsSkinInfill(
 
             if (use_spiralize_range)
             {
-                spdlog::info("【Skin/Infill处理】检测到magic_spiralize_range，为所有层生成完整数据");
+                //CURA_INFO("【Skin/Infill处理】检测到magic_spiralize_range，为所有层生成完整数据");
             }
             else
             {
                 // magic_spiralize_range参数存在但解析失败，回退到传统模式
-                spdlog::info("【Skin/Infill处理】magic_spiralize_range解析失败，回退到传统magic_spiralize模式");
+                //CURA_INFO("【Skin/Infill处理】magic_spiralize_range解析失败，回退到传统magic_spiralize模式");
                 use_spiralize_range = false;
             }
         }
@@ -843,7 +843,7 @@ void FffPolygonGenerator::removeEmptyFirstLayers(SliceDataStorage& storage, size
 
     if (n_empty_first_layers > 0)
     {
-        spdlog::info("Removing {} layers because they are empty", n_empty_first_layers);
+        CURA_INFO("Removing {} layers because they are empty", n_empty_first_layers);
         const coord_t layer_height = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<coord_t>("layer_height");
         for (auto& mesh_ptr : storage.meshes)
         {
@@ -1381,11 +1381,11 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
         return;
     }
 
-    spdlog::info("=== 小图形筛选功能开始 ===");
-    spdlog::info("分析标准: 只分析最外层wall（inset0）的周长和面积");
-    spdlog::info("删除策略: 删除整个截面的所有内容（inset、infill、skin等）");
-    spdlog::info("最小周长阈值: {:.3f}mm", INT2MM(min_circumference));
-    spdlog::info("最小面积阈值: {:.3f}mm²", min_area_um2 / 1000000.0);
+    //CURA_INFO("=== 小图形筛选功能开始 ===");
+    //CURA_INFO("分析标准: 只分析最外层wall（inset0）的周长和面积");
+    //CURA_INFO("删除策略: 删除整个截面的所有内容（inset、infill、skin等）");
+    //CURA_INFO("最小周长阈值: {:.3f}mm", INT2MM(min_circumference));
+    //CURA_INFO("最小面积阈值: {:.3f}mm²", min_area_um2 / 1000000.0);
 
     size_t total_removed_parts = 0;
     size_t total_original_parts = 0;
@@ -1405,8 +1405,8 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
         // 如果该层有多个图形，输出详细分析信息
         if (original_parts_count > 1)
         {
-            spdlog::info("=== 层{} 多图形分析开始 ===", layer_idx);
-            spdlog::info("该层包含{}个图形，开始逐个分析最外层wall", original_parts_count);
+            //CURA_INFO("=== 层{} 多图形分析开始 ===", layer_idx);
+            //CURA_INFO("该层包含{}个图形，开始逐个分析最外层wall", original_parts_count);
         }
 
         // 记录每个part的分析结果，用于详细日志
@@ -1447,8 +1447,8 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
                                 poly_idx, INT2MM(polygon_circumference), INT2MM2(polygon_area), polygon.size());
                 }
 
-                spdlog::info("  图形[{}]: 总周长={:.3f}mm, 总面积={:.3f}mm²",
-                            part_index, INT2MM(total_circumference), INT2MM2(total_area));
+                //CURA_INFO("  图形[{}]: 总周长={:.3f}mm, 总面积={:.3f}mm²",
+                //            part_index, INT2MM(total_circumference), INT2MM2(total_area));
 
                 // === 判断是否需要删除 ===
                 bool should_remove = false;
@@ -1476,12 +1476,12 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
                 // 输出决策结果
                 if (should_remove)
                 {
-                    spdlog::info("  图形[{}]: ❌ 删除决策 - {}", part_index, removal_reason);
-                    spdlog::info("  图形[{}]: 将删除整个截面（包括inset、infill、skin等所有内容）", part_index);
+                    //CURA_INFO("  图形[{}]: ❌ 删除决策 - {}", part_index, removal_reason);
+                    //CURA_INFO("  图形[{}]: 将删除整个截面（包括inset、infill、skin等所有内容）", part_index);
                 }
                 else
                 {
-                    spdlog::info("  图形[{}]: ✅ 保留决策 - 满足所有阈值要求", part_index);
+                    //CURA_INFO("  图形[{}]: ✅ 保留决策 - 满足所有阈值要求", part_index);
                 }
 
                 return should_remove;
@@ -1497,34 +1497,34 @@ void FffPolygonGenerator::filterSmallLayerParts(SliceMeshStorage& mesh)
         // 输出层级筛选结果
         if (original_parts_count > 1 || removed_count > 0)
         {
-            spdlog::info("=== 层{} 筛选结果 ===", layer_idx);
-            spdlog::info("原始图形数: {}, 删除图形数: {}, 保留图形数: {}",
-                        original_parts_count, removed_count, layer.parts.size());
+            //CURA_INFO("=== 层{} 筛选结果 ===", layer_idx);
+            //CURA_INFO("原始图形数: {}, 删除图形数: {}, 保留图形数: {}",
+            //            original_parts_count, removed_count, layer.parts.size());
 
             if (removed_count > 0)
             {
                 double removal_rate = (double)removed_count / original_parts_count * 100.0;
-                spdlog::info("该层删除率: {:.1f}%", removal_rate);
+                //CURA_INFO("该层删除率: {:.1f}%", removal_rate);
             }
         }
     }
 
     // === 输出总体筛选结果 ===
-    spdlog::info("=== 小图形筛选功能完成 ===");
-    spdlog::info("处理层数: {}", mesh.layers.size());
-    spdlog::info("原始图形总数: {}", total_original_parts);
-    spdlog::info("删除图形总数: {}", total_removed_parts);
-    spdlog::info("保留图形总数: {}", total_original_parts - total_removed_parts);
+    //CURA_INFO("=== 小图形筛选功能完成 ===");
+    //CURA_INFO("处理层数: {}", mesh.layers.size());
+    //CURA_INFO("原始图形总数: {}", total_original_parts);
+    //CURA_INFO("删除图形总数: {}", total_removed_parts);
+    //CURA_INFO("保留图形总数: {}", total_original_parts - total_removed_parts);
 
     if (total_removed_parts > 0)
     {
         double removal_percentage = (double)total_removed_parts / total_original_parts * 100.0;
-        spdlog::info("总体删除率: {:.1f}%", removal_percentage);
-        spdlog::info("删除策略: 基于最外层wall分析，删除整个截面内容");
+        //CURA_INFO("总体删除率: {:.1f}%", removal_percentage);
+        //CURA_INFO("删除策略: 基于最外层wall分析，删除整个截面内容");
     }
     else
     {
-        spdlog::info("结果: 没有图形被删除，所有图形都满足阈值要求");
+        //CURA_INFO("结果: 没有图形被删除，所有图形都满足阈值要求");
     }
 }
 
