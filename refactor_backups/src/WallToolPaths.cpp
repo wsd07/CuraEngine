@@ -723,7 +723,7 @@ Polygon WallToolPaths::insertZSeamInterpolationPoints(const Polygon& polygon, co
     }
 
     Point2LL target_point = interpolated_pos.value();
-    spdlog::info("插值目标点: ({:.2f}, {:.2f})", INT2MM(target_point.X), INT2MM(target_point.Y));
+    //CURA_INFO("插值目标点: ({:.2f}, {:.2f})", INT2MM(target_point.X), INT2MM(target_point.Y));
 
     // 在多边形中查找最近的线段并插入插值点
     const PointsSet& points = polygon;

@@ -41,8 +41,8 @@ void Raft::generate(SliceDataStorage& storage)
     if (magic_spiralize && initial_bottom_layers == 0)
     {
         // Spiralize模式且无底层：基于第一层的螺旋壁生成优化的Raft
-        spdlog::info("=== SPIRALIZE RAFT OPTIMIZATION ACTIVATED ===");
-        spdlog::info("生成Spiralize模式优化Raft：基于第一层螺旋壁路径");
+        //CURA_INFO("=== SPIRALIZE RAFT OPTIMIZATION ACTIVATED ===");
+        //CURA_INFO("生成Spiralize模式优化Raft：基于第一层螺旋壁路径");
 
         // 写入调试文件确认代码被执行
         std::ofstream debug_file("spiralize_raft_debug.txt");
@@ -53,40 +53,40 @@ void Raft::generate(SliceDataStorage& storage)
 
         // 收集所有第一层的螺旋壁路径
         Shape spiral_walls_combined;
-        spdlog::info("开始收集第一层螺旋壁路径，mesh数量: {}", storage.meshes.size());
+        //CURA_INFO("开始收集第一层螺旋壁路径，mesh数量: {}", storage.meshes.size());
 
         for (const std::shared_ptr<SliceMeshStorage>& mesh : storage.meshes)
         {
             // 跳过填充网格和反悬垂网格
             if (mesh->settings.get<bool>("infill_mesh") || mesh->settings.get<bool>("anti_overhang_mesh"))
             {
-                spdlog::info("跳过填充网格或反悬垂网格");
+                //CURA_INFO("跳过填充网格或反悬垂网格");
                 continue;
             }
 
-            spdlog::info("处理mesh，层数: {}", mesh->layers.size());
+            //CURA_INFO("处理mesh，层数: {}", mesh->layers.size());
 
             // 检查第一层是否存在且有parts
             if (mesh->layers.size() > 0 && !mesh->layers[0].parts.empty())
             {
-                spdlog::info("第一层parts数量: {}", mesh->layers[0].parts.size());
+                //CURA_INFO("第一层parts数量: {}", mesh->layers[0].parts.size());
 
                 for (const SliceLayerPart& part : mesh->layers[0].parts)
                 {
-                    spdlog::info("检查part - spiral_wall大小: {}, outline大小: {}",
-                                part.spiral_wall.size(), part.outline.size());
+                    //CURA_INFO("检查part - spiral_wall大小: {}, outline大小: {}",
+                    //            part.spiral_wall.size(), part.outline.size());
 
                     // 使用螺旋壁路径，如果不存在则使用轮廓
                     if (!part.spiral_wall.empty())
                     {
-                        spdlog::info("使用spiral_wall路径");
+                        //CURA_INFO("使用spiral_wall路径");
                         spiral_walls_combined.push_back(part.spiral_wall);
                     }
                     else if (!part.outline.empty())
                     {
                         // 如果没有螺旋壁，使用轮廓的内偏移作为替代
                         // 这种情况可能发生在某些边界条件下
-                        spdlog::info("spiral_wall为空，使用outline内偏移");
+                        //CURA_INFO("spiral_wall为空，使用outline内偏移");
                         const coord_t line_width = mesh->settings.get<coord_t>("wall_line_width_0");
                         Shape wall_path = part.outline.offset(-line_width / 2);
                         if (!wall_path.empty())
@@ -111,7 +111,7 @@ void Raft::generate(SliceDataStorage& storage)
             // 合并所有螺旋壁路径
             spiral_walls_combined = spiral_walls_combined.unionPolygons();
 
-            spdlog::info("合并后的螺旋壁路径数量: {}", spiral_walls_combined.size());
+            //CURA_INFO("合并后的螺旋壁路径数量: {}", spiral_walls_combined.size());
 
             // 正确的Spiralize Raft优化逻辑：
             // 1. 向外扩展margin距离得到外边界
@@ -129,7 +129,7 @@ void Raft::generate(SliceDataStorage& storage)
             Shape inner_boundary_surface = spiral_walls_combined.offset(-raft_surface_margin, ClipperLib::jtRound);
             Shape raft_surface_from_walls = outer_boundary_surface.difference(inner_boundary_surface);
 
-            spdlog::info("Raft轮廓生成完成 - base: {}, interface: {}, surface: {}",
+            //CURA_INFO("Raft轮廓生成完成 - base: {}, interface: {}, surface: {}",
                         raft_base_from_walls.size(), raft_interface_from_walls.size(), raft_surface_from_walls.size());
 
             // 设置优化后的Raft轮廓

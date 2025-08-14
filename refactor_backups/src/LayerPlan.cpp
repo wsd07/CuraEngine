@@ -1016,8 +1016,8 @@ void LayerPlan::addSpiralTransitionWall(
         }
     }
 
-    spdlog::info("【螺旋过渡】细分完成：原始顶点{}个，细分后{}个点，总长度={:.2f}mm",
-                 polygon.size(), subdivided_points.size(), total_length);
+    //CURA_INFO("【螺旋过渡】细分完成：原始顶点{}个，细分后{}个点，总长度={:.2f}mm",
+    //             polygon.size(), subdivided_points.size(), total_length);
 
     // 移动到起始点
     addTravel(polygon[start_vertex_idx]);
@@ -1074,15 +1074,15 @@ void LayerPlan::addSpiralTransitionWall(
         if (i == 1 || i == subdivided_points.size() / 4 || i == subdivided_points.size() / 2 ||
             i == subdivided_points.size() * 3 / 4 || i == subdivided_points.size() - 1)
         {
-            spdlog::info("【螺旋过渡】点{}/{}, 进度={:.1f}%, 流量={:.3f}({:.1f}%->{:.1f}%), 速度={:.3f}({:.1f}%->{:.1f}%), Z偏移={:.3f}mm",
-                         i, subdivided_points.size(), progress * 100.0, flow_ratio,
-                         spiralized_start_flow_rate, 100.0, speed_factor,
-                         spiralized_start_speed_rate, 100.0, INT2MM(z_offset));
+            //CURA_INFO("【螺旋过渡】点{}/{}, 进度={:.1f}%, 流量={:.3f}({:.1f}%->{:.1f}%), 速度={:.3f}({:.1f}%->{:.1f}%), Z偏移={:.3f}mm",
+            //             i, subdivided_points.size(), progress * 100.0, flow_ratio,
+            //             spiralized_start_flow_rate, 100.0, speed_factor,
+            //             spiralized_start_speed_rate, 100.0, INT2MM(z_offset));
         }
     }
 
-    spdlog::info("【螺旋过渡】完成过渡墙打印，输出点数={}",
-                 subdivided_points.size());
+    //CURA_INFO("【螺旋过渡】完成过渡墙打印，输出点数={}",
+    //             subdivided_points.size());
 }
 
 void LayerPlan::addSpiralEndingWall(
@@ -1181,8 +1181,8 @@ void LayerPlan::addSpiralEndingWall(
         }
     }
 
-    spdlog::info("【螺旋结束】细分完成：原始顶点{}个，细分后{}个点，总长度={:.2f}mm",
-                 polygon.size(), subdivided_points.size(), total_length);
+    //CURA_INFO("【螺旋结束】细分完成：原始顶点{}个，细分后{}个点，总长度={:.2f}mm",
+    //             polygon.size(), subdivided_points.size(), total_length);
 
     // 遍历细分后的点，生成挤出移动（Z高度保持不变，流量线性减少）
     for (size_t i = 1; i < subdivided_points.size(); i++)
@@ -1229,8 +1229,8 @@ void LayerPlan::addSpiralEndingWall(
         }
     }
 
-    spdlog::info("【螺旋结束】完成结束墙打印，输出点数={}",
-                 subdivided_points.size());
+    //CURA_INFO("【螺旋结束】完成结束墙打印，输出点数={}",
+    //             subdivided_points.size());
 }
 
 static constexpr double max_non_bridge_line_volume = MM2INT(100); // limit to accumulated "volume" of non-bridge lines which is proportional to distance x extrusion rate
@@ -3907,8 +3907,8 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                             static bool first_smooth_z_log = true;
                             if (first_smooth_z_log)
                             {
-                                spdlog::info("【平滑螺旋Z】启用平滑Z坐标上升，从前一层高度线性增加到本层高度，Z偏移={:.3f}mm，进度={:.1f}%",
-                                           INT2MM(z_offset), (length / totalLength) * 100.0);
+                                //CURA_INFO("【平滑螺旋Z】启用平滑Z坐标上升，从前一层高度线性增加到本层高度，Z偏移={:.3f}mm，进度={:.1f}%",
+                                //           INT2MM(z_offset), (length / totalLength) * 100.0);
                                 first_smooth_z_log = false;
                             }
                             z_offset -= layer_thickness_;
@@ -3922,7 +3922,7 @@ void LayerPlan::writeGCode(GCodeExport& gcode)
                             static bool first_no_smooth_z_log = true;
                             if (first_no_smooth_z_log)
                             {
-                                spdlog::info("【平滑螺旋Z】禁用平滑Z坐标上升，保持层高不变");
+                                //CURA_INFO("【平滑螺旋Z】禁用平滑Z坐标上升，保持层高不变");
                                 first_no_smooth_z_log = false;
                             }
                         }

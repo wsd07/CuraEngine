@@ -633,6 +633,11 @@ protected:
      * Genrate small segments for local maxima where the beading would only result in a single bead
      */
     void generateLocalMaximaSingleBeads();
+
+    /*!
+     * Validate and fix graph integrity by checking and repairing twin pointers
+     */
+    void validateAndFixGraphIntegrity();
 };
 
 } // namespace cura

@@ -9,6 +9,7 @@
 
 #include "utils/linearAlg2D.h"
 #include "utils/macros.h"
+#include "utils/CrashSafeDebug.h"
 
 namespace cura
 {
@@ -36,12 +37,20 @@ bool STHalfEdge::canGoUp(bool strict) const
         {
             return true;
         }
-        assert(outgoing->twin_);
-        if (! outgoing->twin_)
+        // 使用崩溃安全检查替代assert
+        if (!CURA_CHECK_WITH_ERROR(outgoing->twin_, "canGoUp中边缘缺少twin指针"))
+        {
+            CURA_ERROR_FLUSH_F("canGoUp中发现无效边缘:");
+            CURA_ERROR_FLUSH_F("  - outgoing地址: %p", static_cast<void*>(outgoing));
             return false;
-        assert(outgoing->twin_->next_);
-        if (! outgoing->twin_->next_)
+        }
+
+        if (!CURA_CHECK_WITH_ERROR(outgoing->twin_->next_, "canGoUp中twin边缘缺少next指针"))
+        {
+            CURA_ERROR_FLUSH_F("canGoUp中twin边缘无效:");
+            CURA_ERROR_FLUSH_F("  - twin地址: %p", static_cast<void*>(outgoing->twin_));
             return true; // This point is on the boundary?! Should never occur
+        }
     }
     return false;
 }
@@ -104,12 +113,20 @@ std::optional<cura::coord_t> STHalfEdge::distToGoUp() const
                 ret = dist_to_up;
             }
         }
-        assert(outgoing->twin_);
-        if (! outgoing->twin_)
+        // 使用崩溃安全检查替代assert
+        if (!CURA_CHECK_WITH_ERROR(outgoing->twin_, "distToGoUp中边缘缺少twin指针"))
+        {
+            CURA_ERROR_FLUSH_F("distToGoUp中发现无效边缘:");
+            CURA_ERROR_FLUSH_F("  - outgoing地址: %p", static_cast<void*>(outgoing));
             return std::optional<cura::coord_t>();
-        assert(outgoing->twin_->next_);
-        if (! outgoing->twin_->next_)
+        }
+
+        if (!CURA_CHECK_WITH_ERROR(outgoing->twin_->next_, "distToGoUp中twin边缘缺少next指针"))
+        {
+            CURA_ERROR_FLUSH_F("distToGoUp中twin边缘无效:");
+            CURA_ERROR_FLUSH_F("  - twin地址: %p", static_cast<void*>(outgoing->twin_));
             return 0; // This point is on the boundary?! Should never occur
+        }
     }
     if (ret)
     {
@@ -164,9 +181,13 @@ bool STHalfEdgeNode::isCentral() const
         {
             return true;
         }
-        assert(edge->twin_);
-        if (! edge->twin_)
+        // 使用崩溃安全检查替代assert
+        if (!CURA_CHECK_WITH_ERROR(edge->twin_, "canGoDown中边缘缺少twin指针"))
+        {
+            CURA_ERROR_FLUSH_F("canGoDown中发现无效边缘:");
+            CURA_ERROR_FLUSH_F("  - edge地址: %p", static_cast<void*>(edge));
             return false;
+        }
     } while (edge = edge->twin_->next_, edge != incident_edge_);
     return false;
 }
@@ -185,9 +206,21 @@ bool STHalfEdgeNode::isLocalMaximum(bool strict) const
         {
             return false;
         }
-        assert(edge->twin_);
-        if (! edge->twin_)
+        // 使用崩溃安全检查替代assert
+        if (!CURA_CHECK_WITH_ERROR(edge->twin_, "边缘缺少twin指针"))
+        {
+            CURA_ERROR_FLUSH_F("isLocalMaximum中发现无效边缘:");
+            CURA_ERROR_FLUSH_F("  - edge地址: %p", static_cast<void*>(edge));
+            if (edge->from_ && edge->to_) {
+                CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                                  edge->from_->p_.X, edge->from_->p_.Y,
+                                  edge->to_->p_.X, edge->to_->p_.Y);
+            } else {
+                CURA_ERROR_FLUSH("  - edge的from_或to_节点也为空");
+            }
+            CURA_ERROR_FLUSH("  - 可能原因: Voronoi图构建不完整或边缘数据损坏");
             return false;
+        }
 
         if (! edge->twin_->next_)
         { // This point is on the boundary
@@ -247,9 +280,11 @@ void SkeletalTrapezoidationGraph::collapseSmallEdges(coord_t snap_dist)
         bool edge_it_is_updated = false;
         if (quad_mid && should_collapse(quad_mid->from_, quad_mid->to_))
         {
-            assert(quad_mid->twin_);
-            if (! quad_mid->twin_)
+            // 使用崩溃安全检查替代assert
+            if (!CURA_CHECK_WITH_ERROR(quad_mid->twin_, "collapseSmallEdges中quad边缘缺少twin指针"))
             {
+                CURA_ERROR_FLUSH_F("collapseSmallEdges中发现无效quad边缘:");
+                CURA_ERROR_FLUSH_F("  - quad_mid地址: %p", static_cast<void*>(quad_mid));
                 RUN_ONCE(spdlog::warn("Encountered quad edge without a twin."));
                 continue; // Prevent accessing unallocated memory.
             }
@@ -334,7 +369,16 @@ void SkeletalTrapezoidationGraph::makeRib(edge_t*& prev_edge, Point2LL start_sou
     Point2LL p = LinearAlg2D::getClosestOnLine(prev_edge->to_->p_, start_source_point, end_source_point);
     coord_t dist = vSize(prev_edge->to_->p_ - p);
     prev_edge->to_->data_.distance_to_boundary_ = dist;
-    assert(dist >= 0);
+    // 使用崩溃安全检查替代assert
+    if (!CURA_CHECK_WITH_ERROR(dist >= 0, "计算的距离为负数"))
+    {
+        CURA_ERROR_FLUSH_F("负距离错误:");
+        CURA_ERROR_FLUSH_F("  - 计算距离: %d", dist);
+        CURA_ERROR_FLUSH_F("  - 节点位置: (%d,%d)", prev_edge->to_->p_.X, prev_edge->to_->p_.Y);
+        CURA_ERROR_FLUSH_F("  - 最近点: (%d,%d)", p.X, p.Y);
+        // 修正为0
+        dist = 0;
+    }
 
     nodes.emplace_front(SkeletalTrapezoidationJoint(), p);
     node_t* node = &nodes.front();
@@ -370,7 +414,16 @@ std::pair<SkeletalTrapezoidationGraph::edge_t*, SkeletalTrapezoidationGraph::edg
     std::pair<Point2LL, Point2LL> source_segment = getSource(edge);
     Point2LL px = LinearAlg2D::getClosestOnLineSegment(p, source_segment.first, source_segment.second);
     coord_t dist = vSize(p - px);
-    assert(dist > 0);
+    // 使用崩溃安全检查替代assert
+    if (!CURA_CHECK_WITH_ERROR(dist > 0, "计算的距离为零或负数"))
+    {
+        CURA_ERROR_FLUSH_F("无效距离错误:");
+        CURA_ERROR_FLUSH_F("  - 计算距离: %d", dist);
+        CURA_ERROR_FLUSH_F("  - 节点位置: (%d,%d)", p.X, p.Y);
+        CURA_ERROR_FLUSH_F("  - 最近点: (%d,%d)", px.X, px.Y);
+        // 修正为最小有效值
+        dist = 1;
+    }
     mid_node->data_.distance_to_boundary_ = dist;
     mid_node->data_.transition_ratio_ = 0; // Both transition end should have rest = 0, because at the ends a whole number of beads fits without rest
 
@@ -433,7 +486,19 @@ std::pair<SkeletalTrapezoidationGraph::edge_t*, SkeletalTrapezoidationGraph::edg
     first->twin_ = nullptr; // we don't know these yet!
     second->twin_ = nullptr;
 
-    assert(second->prev_->from_->data_.distance_to_boundary_ == 0);
+    // 使用崩溃安全检查替代assert
+    if (!CURA_CHECK_WITH_ERROR(second->prev_->from_->data_.distance_to_boundary_ == 0, "边界节点距离不为零"))
+    {
+        CURA_ERROR_FLUSH_F("边界距离错误:");
+        CURA_ERROR_FLUSH_F("  - 期望距离: 0");
+        CURA_ERROR_FLUSH_F("  - 实际距离: %d", second->prev_->from_->data_.distance_to_boundary_);
+        if (second->prev_->from_) {
+            CURA_ERROR_FLUSH_F("  - 节点位置: (%d,%d)",
+                              second->prev_->from_->p_.X, second->prev_->from_->p_.Y);
+        }
+        // 修正为0
+        second->prev_->from_->data_.distance_to_boundary_ = 0;
+    }
 
     return std::make_pair(first, second);
 }

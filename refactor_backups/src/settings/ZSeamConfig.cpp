@@ -53,8 +53,8 @@ std::optional<Point2LL> ZSeamConfig::getInterpolatedSeamPosition() const
 
     // 获取当前层的Z坐标（微米单位）
     const coord_t layer_z = current_layer_z_;
-    spdlog::info("=== 外轮廓Z接缝点插值计算 ===");
-    spdlog::info("当前层Z坐标: {:.2f}mm", INT2MM(layer_z));
+    //CURA_INFO("=== 外轮廓Z接缝点插值计算 ===");
+    //CURA_INFO("当前层Z坐标: {:.2f}mm", INT2MM(layer_z));
 
     // 特殊情况：如果只有一个接缝点，直接返回该点的XY坐标
     if (draw_z_seam_points_.size() == 1)
@@ -75,15 +75,15 @@ std::optional<Point2LL> ZSeamConfig::getInterpolatedSeamPosition() const
     const coord_t max_z = sorted_points.back().z_;   // 最高点的Z坐标
 
     // 输出调试信息：显示用户设置的Z范围
-    spdlog::info("用户设置Z范围: {:.2f}mm - {:.2f}mm", INT2MM(min_z), INT2MM(max_z));
+    //CURA_INFO("用户设置Z范围: {:.2f}mm - {:.2f}mm", INT2MM(min_z), INT2MM(max_z));
 
     // 处理边界情况1：当前层Z坐标低于最低接缝点
     if (layer_z < min_z)
     {
         // 总是使用最低点的XY坐标，确保有一个合理的接缝位置
         Point2LL result(sorted_points.front().x_, sorted_points.front().y_);
-        spdlog::info("层Z({:.2f}mm)低于最低点({:.2f}mm)，使用最低点坐标: ({:.2f}, {:.2f})",
-                     INT2MM(layer_z), INT2MM(min_z), INT2MM(result.X), INT2MM(result.Y));
+        //CURA_INFO("层Z({:.2f}mm)低于最低点({:.2f}mm)，使用最低点坐标: ({:.2f}, {:.2f})",
+        //             INT2MM(layer_z), INT2MM(min_z), INT2MM(result.X), INT2MM(result.Y));
         return result;
     }
     // 处理边界情况2：当前层Z坐标高于最高接缝点
@@ -93,16 +93,16 @@ std::optional<Point2LL> ZSeamConfig::getInterpolatedSeamPosition() const
         {
             // grow=true：超出范围时回退到默认接缝处理方式
             // 这允许系统使用其他接缝策略（如shortest、user_specified等）
-            spdlog::info("层Z({:.2f}mm)高于最高点({:.2f}mm)且grow=true，使用默认接缝处理",
-                        INT2MM(layer_z), INT2MM(max_z));
+            //CURA_INFO("层Z({:.2f}mm)高于最高点({:.2f}mm)且grow=true，使用默认接缝处理",
+            //            INT2MM(layer_z), INT2MM(max_z));
             return std::nullopt;  // 返回空值，让系统使用默认策略
         }
         else
         {
             // grow=false：使用最高点的XY坐标，保持接缝位置固定
             Point2LL result(sorted_points.back().x_, sorted_points.back().y_);
-            spdlog::info("层Z({:.2f}mm)高于最高点({:.2f}mm)且grow=false，使用最高点坐标: ({:.2f}, {:.2f})",
-                        INT2MM(layer_z), INT2MM(max_z), INT2MM(result.X), INT2MM(result.Y));
+            //CURA_INFO("层Z({:.2f}mm)高于最高点({:.2f}mm)且grow=false，使用最高点坐标: ({:.2f}, {:.2f})",
+            //            INT2MM(layer_z), INT2MM(max_z), INT2MM(result.X), INT2MM(result.Y));
             return result;
         }
     }
@@ -139,11 +139,11 @@ std::optional<Point2LL> ZSeamConfig::getInterpolatedSeamPosition() const
             Point2LL result(interpolated_x, interpolated_y);
 
             // 输出详细的插值信息用于调试
-            spdlog::info("插值计算成功: 在点({:.2f},{:.2f},{:.2f})和({:.2f},{:.2f},{:.2f})之间",
-                        INT2MM(p1.x_), INT2MM(p1.y_), INT2MM(p1.z_),
-                        INT2MM(p2.x_), INT2MM(p2.y_), INT2MM(p2.z_));
-            spdlog::info("插值参数t={:.3f}, 结果坐标: ({:.2f}, {:.2f})",
-                         t, INT2MM(result.X), INT2MM(result.Y));
+            //CURA_INFO("插值计算成功: 在点({:.2f},{:.2f},{:.2f})和({:.2f},{:.2f},{:.2f})之间",
+            //            INT2MM(p1.x_), INT2MM(p1.y_), INT2MM(p1.z_),
+            //            INT2MM(p2.x_), INT2MM(p2.y_), INT2MM(p2.z_));
+            //CURA_INFO("插值参数t={:.3f}, 结果坐标: ({:.2f}, {:.2f})",
+            //             t, INT2MM(result.X), INT2MM(result.Y));
             return result;
         }
     }

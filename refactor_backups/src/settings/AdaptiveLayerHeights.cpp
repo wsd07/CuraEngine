@@ -8,12 +8,14 @@
 #include <limits>
 #include <numbers>
 
+#include <spdlog/spdlog.h>
+
 #include "Application.h"
 #include "Slice.h"
 #include "settings/EnumSettings.h"
 #include "settings/types/Angle.h"
+#include "utils/DebugManager.h"
 #include "utils/Point3D.h"
-#include <spdlog/spdlog.h>
 
 namespace cura
 {
@@ -80,19 +82,19 @@ void AdaptiveLayerHeights::calculateLayers()
     // === 用户定义层厚模式 ===
     if (user_thickness_definition_enable_ && !user_thickness_definition_.isEmpty())
     {
-        spdlog::info("=== 使用用户定义层厚模式 ===");
+        //CURA_INFO("=== 使用用户定义层厚模式 ===");
         calculateLayersWithUserDefinedThickness(model_max_z, z_level);
         return;
     }
 
     // === 原有的基于三角面倾斜度的自适应层厚模式 ===
-    spdlog::info("=== 使用基于三角面倾斜度的自适应层厚模式 ===");
+    //CURA_INFO("=== 使用基于三角面倾斜度的自适应层厚模式 ===");
     calculateLayersWithTriangleSlopes(model_max_z, z_level);
 }
 
 void AdaptiveLayerHeights::calculateLayersWithUserDefinedThickness(const coord_t model_max_z, coord_t z_level)
 {
-    spdlog::info("开始用户定义层厚计算，模型最大高度: {:.2f}mm", INT2MM(model_max_z));
+    //CURA_INFO("开始用户定义层厚计算，模型最大高度: {:.2f}mm", INT2MM(model_max_z));
 
     // 循环生成层直到达到模型顶部
     while (z_level < model_max_z)
@@ -136,7 +138,7 @@ void AdaptiveLayerHeights::calculateLayersWithUserDefinedThickness(const coord_t
                      INT2MM(z_level), INT2MM(layer_thickness));
     }
 
-    spdlog::info("用户定义层厚计算完成，总层数: {}", layers_.size());
+    //CURA_INFO("用户定义层厚计算完成，总层数: {}", layers_.size());
 }
 
 void AdaptiveLayerHeights::calculateLayersWithTriangleSlopes(const coord_t model_max_z, coord_t z_level)

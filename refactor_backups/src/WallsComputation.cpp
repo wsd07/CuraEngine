@@ -76,8 +76,8 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
                 spiralize = in_range;
 
                 // 调试信息
-                spdlog::info("【螺旋范围控制】第{}层，高度{:.3f}mm（使用正确的printZ），范围检查结果：{}，螺旋模式：{}",
-                             layer_nr_, current_layer_z / 1000.0, in_range ? "在范围内" : "超出范围", spiralize ? "启用" : "禁用");
+                //CURA_INFO("【螺旋范围控制】第{}层，高度{:.3f}mm（使用正确的printZ），范围检查结果：{}，螺旋模式：{}",
+                //             layer_nr_, current_layer_z / 1000.0, in_range ? "在范围内" : "超出范围", spiralize ? "启用" : "禁用");
             }
             else
             {
@@ -88,8 +88,8 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
                 spiralize = layer_nr_ >= static_cast<LayerIndex>(initial_bottom_layers);
 
                 // 调试信息
-                spdlog::info("【螺旋范围控制】magic_spiralize_range解析失败，回退到全螺旋模式，第{}层，螺旋模式：{}",
-                             layer_nr_, spiralize ? "启用" : "禁用");
+                //CURA_INFO("【螺旋范围控制】magic_spiralize_range解析失败，回退到全螺旋模式，第{}层，螺旋模式：{}",
+                //             layer_nr_, spiralize ? "启用" : "禁用");
             }
         }
         else
@@ -99,13 +99,13 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
             spiralize = layer_nr_ >= static_cast<LayerIndex>(initial_bottom_layers);
 
             // 调试信息
-            spdlog::info("【螺旋传统控制】第{}层，使用initial_bottom_layers逻辑，螺旋模式：{}",
-                         layer_nr_, spiralize ? "启用" : "禁用");
+            //CURA_INFO("【螺旋传统控制】第{}层，使用initial_bottom_layers逻辑，螺旋模式：{}",
+            //             layer_nr_, spiralize ? "启用" : "禁用");
         }
     }
     else
     {
-        spdlog::info("【螺旋模式关闭】第{}层，magic_spiralize=false", layer_nr_);
+        //CURA_INFO("【螺旋模式关闭】第{}层，magic_spiralize=false", layer_nr_);
     }
 
     const size_t alternate = ((layer_nr_ % 2) + 2) % 2;
@@ -130,7 +130,7 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
     // When spiralizing, generate the spiral insets using simple offsets instead of generating toolpaths
     if (spiralize)
     {
-        spdlog::info("【墙体生成】第{}层，生成螺旋墙体", layer_nr_);
+        //CURA_INFO("【墙体生成】第{}层，生成螺旋墙体", layer_nr_);
         const bool recompute_outline_based_on_outer_wall = settings_.get<bool>("support_enable") && ! settings_.get<bool>("fill_outline_gaps");
 
         generateSpiralInsets(part, line_width_0, wall_0_inset, recompute_outline_based_on_outer_wall, layer_z);
@@ -143,7 +143,7 @@ void WallsComputation::generateWalls(SliceLayerPart* part, SectionType section_t
     }
     else
     {
-        spdlog::info("【墙体生成】第{}层，生成正常墙体（包含inset/infill/skin）", layer_nr_);
+        //CURA_INFO("【墙体生成】第{}层，生成正常墙体（包含inset/infill/skin）", layer_nr_);
         WallToolPaths wall_tool_paths(part->outline, line_width_0, line_width_x, wall_count, wall_0_inset, settings_, layer_nr_, section_type, layer_z);
         part->wall_toolpaths = wall_tool_paths.getToolPaths();
         part->inner_area = wall_tool_paths.getInnerContour();
@@ -164,7 +164,7 @@ void WallsComputation::generateWalls(SliceLayer* layer, SectionType section)
     // 获取当前层的正确Z坐标（支持可变层厚）
     coord_t layer_z = layer->printZ;
 
-    spdlog::info("【可变层厚修复】第{}层，使用正确的层Z坐标: {:.2f}mm（来自layer->printZ，支持可变层厚）", layer_nr_, INT2MM(layer_z));
+    //CURA_INFO("【可变层厚修复】第{}层，使用正确的层Z坐标: {:.2f}mm（来自layer->printZ，支持可变层厚）", layer_nr_, INT2MM(layer_z));
 
     for (SliceLayerPart& part : layer->parts)
     {
@@ -262,7 +262,7 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         settings_.get<bool>("z_seam_point_interpolation") &&
         !settings_.get<std::vector<Point3LL>>("draw_z_seam_points").empty())
     {
-        spdlog::info("=== 螺旋模式Z接缝点插值预处理开始 ===");
+        //CURA_INFO("=== 螺旋模式Z接缝点插值预处理开始 ===");
         // 使用传入的正确Z坐标（支持可变层厚）
         coord_t current_layer_z = layer_z;
 
@@ -273,7 +273,7 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
             processed_spiral_outline.push_back(processed_polygon);
         }
         spiral_outline = processed_spiral_outline;
-        spdlog::info("螺旋模式Z接缝点插值预处理完成，使用正确的printZ={:.2f}mm", INT2MM(current_layer_z));
+        //CURA_INFO("螺旋模式Z接缝点插值预处理完成，使用正确的printZ={:.2f}mm", INT2MM(current_layer_z));
     }
 
     // 使用处理后的轮廓生成螺旋wall
@@ -321,12 +321,12 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
             // 计算当前层的圈数
             current_contours_count = reinforce_contours_raw - current_layer_in_reinforce * contours_diff_per_layer;
 
-            spdlog::info("【螺旋加强算法】第{}层，首层圈数：{:.2f}，末层圈数：{:.2f}，每层差值：{:.2f}，当前层圈数：{:.2f}",
-                        layer_nr_, reinforce_contours_raw, reinforce_mini_contours, contours_diff_per_layer, current_contours_count);
+            //CURA_INFO("【螺旋加强算法】第{}层，首层圈数：{:.2f}，末层圈数：{:.2f}，每层差值：{:.2f}，当前层圈数：{:.2f}",
+            //            layer_nr_, reinforce_contours_raw, reinforce_mini_contours, contours_diff_per_layer, current_contours_count);
         }
         else
         {
-            spdlog::info("【螺旋加强算法】第{}层，固定圈数：{:.2f}（未启用渐变）", layer_nr_, current_contours_count);
+            //CURA_INFO("【螺旋加强算法】第{}层，固定圈数：{:.2f}（未启用渐变）", layer_nr_, current_contours_count);
         }
 
         // 计算实际需要的圈数（四舍五入）
@@ -335,21 +335,21 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         // 如果四舍五入后为0，跳过加强结构生成
         if (actual_contour_count == 0)
         {
-            spdlog::info("【螺旋加强算法】第{}层，四舍五入后圈数为0，跳过加强结构生成", layer_nr_);
+            //CURA_INFO("【螺旋加强算法】第{}层，四舍五入后圈数为0，跳过加强结构生成", layer_nr_);
             return;
         }
 
         // 计算剩余宽度（最内圈的宽度）
         double remaining_width = current_contours_count - (actual_contour_count - 1);
 
-        spdlog::info("【螺旋加强算法】第{}层，目标圈数：{:.2f}，最终圈数：{}，最内圈宽度：{:.2f}，反向：{}",
-                    layer_nr_, current_contours_count, actual_contour_count, remaining_width, reinforce_flip ? "是" : "否");
+        //CURA_INFO("【螺旋加强算法】第{}层，目标圈数：{:.2f}，最终圈数：{}，最内圈宽度：{:.2f}，反向：{}",
+        //            layer_nr_, current_contours_count, actual_contour_count, remaining_width, reinforce_flip ? "是" : "否");
 
         // 按照用户算法实现圈数和宽度计算
         std::vector<std::pair<coord_t, coord_t>> contour_info; // {offset, width}
 
-        spdlog::info("【螺旋加强算法】第{}层，最终圈数：{}，前{}圈为1倍wall_0，最内圈宽度：{:.2f}倍wall_0",
-                    layer_nr_, actual_contour_count, actual_contour_count - 1, remaining_width);
+        //CURA_INFO("【螺旋加强算法】第{}层，最终圈数：{}，前{}圈为1倍wall_0，最内圈宽度：{:.2f}倍wall_0",
+        //            layer_nr_, actual_contour_count, actual_contour_count - 1, remaining_width);
 
 
         // 重新排序：最内圈（可变宽度）在最里面，外圈（固定宽度）在外面
@@ -374,7 +374,7 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
             }
         }
 
-        spdlog::info("【螺旋加强算法】第{}层，总共生成{}个加强圈（最内圈可变，外圈固定）", layer_nr_, contour_info.size());
+        //CURA_INFO("【螺旋加强算法】第{}层，总共生成{}个加强圈（最内圈可变，外圈固定）", layer_nr_, contour_info.size());
 
         // 按照从内到外的顺序生成加强圈（打印顺序）
         //std::reverse(contour_info.begin(), contour_info.end());
@@ -386,8 +386,8 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
 
             Shape reinforcement_wall = part->spiral_wall.offset(-offset);
 
-            spdlog::info("【螺旋加强】第{}层，第{}个加强圈，偏移{}μm，宽度{}μm，生成多边形数量：{}",
-                         layer_nr_, i + 1, offset, width, reinforcement_wall.size());
+            //CURA_INFO("【螺旋加强】第{}层，第{}个加强圈，偏移{}μm，宽度{}μm，生成多边形数量：{}",
+            //             layer_nr_, i + 1, offset, width, reinforcement_wall.size());
 
             // 检查偏移结果是否为空
             if (reinforcement_wall.empty())
@@ -422,8 +422,8 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
                 }
             }
 
-            spdlog::info("【螺旋加强】第{}层，第{}个加强圈，成功添加{}个多边形到spiral_wall，宽度{}μm",
-                         layer_nr_, i + 1, added_count, width);
+            //CURA_INFO("【螺旋加强】第{}层，第{}个加强圈，成功添加{}个多边形到spiral_wall，宽度{}μm",
+            //             layer_nr_, i + 1, added_count, width);
         }
     }
 
@@ -433,7 +433,7 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
     // 分别处理主螺旋圈和加强圈，避免Simplify操作移除加强圈
     if (reinforce_layers > 0 && (layer_nr_ - initial_bottom_layers) < reinforce_layers && part->spiral_wall.size() > 1)
     {
-        spdlog::info("【螺旋加强】第{}层，分别优化主螺旋圈和加强圈，总数量：{}", layer_nr_, part->spiral_wall.size());
+        //CURA_INFO("【螺旋加强】第{}层，分别优化主螺旋圈和加强圈，总数量：{}", layer_nr_, part->spiral_wall.size());
 
         // 主螺旋圈（第一个多边形）
         Shape main_spiral;
@@ -490,8 +490,8 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
             }
         }
 
-        spdlog::info("【螺旋加强】第{}层，优化后数量：{}（主螺旋：{}，加强圈：{}）",
-                     layer_nr_, part->spiral_wall.size(), main_spiral.size(), reinforcement_spirals.size());
+        //CURA_INFO("【螺旋加强】第{}层，优化后数量：{}（主螺旋：{}，加强圈：{}）",
+        //             layer_nr_, part->spiral_wall.size(), main_spiral.size(), reinforcement_spirals.size());
     }
     else
     {
@@ -516,7 +516,7 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
         settings_.get<bool>("z_seam_point_interpolation") &&
         !settings_.get<std::vector<Point3LL>>("draw_z_seam_points").empty())
     {
-        spdlog::info("=== 螺旋模式Z接缝点插值后处理开始 ===");
+        //CURA_INFO("=== 螺旋模式Z接缝点插值后处理开始 ===");
         // 使用传入的正确Z坐标（支持可变层厚）
         coord_t current_layer_z = layer_z;
 
@@ -527,7 +527,7 @@ void WallsComputation::generateSpiralInsets(SliceLayerPart* part, coord_t line_w
             processed_spiral_wall.push_back(processed_polygon);
         }
         part->spiral_wall = processed_spiral_wall;
-        spdlog::info("螺旋模式Z接缝点插值后处理完成，使用正确的printZ={:.2f}mm", INT2MM(current_layer_z));
+        //CURA_INFO("螺旋模式Z接缝点插值后处理完成，使用正确的printZ={:.2f}mm", INT2MM(current_layer_z));
     }
 
     if (recompute_outline_based_on_outer_wall)
@@ -588,7 +588,7 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
     }
 
     Point2LL target_point = interpolated_pos.value();
-    spdlog::info("螺旋模式插值目标点: ({:.2f}, {:.2f})", INT2MM(target_point.X), INT2MM(target_point.Y));
+    //CURA_INFO("螺旋模式插值目标点: ({:.2f}, {:.2f})", INT2MM(target_point.X), INT2MM(target_point.Y));
 
     // 在多边形中查找最近的线段并插入插值点
     const PointsSet& points = polygon;
@@ -629,7 +629,7 @@ Polygon WallsComputation::insertZSeamInterpolationPointsForSpiral(const Polygon&
         }
     }
 
-    spdlog::info("螺旋模式最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
+    //CURA_INFO("螺旋模式最近线段: 索引{}, 距离: {:.2f}mm", best_segment_idx, INT2MM(std::sqrt(min_distance_sq)));
 
     if (need_insert_point)
     {

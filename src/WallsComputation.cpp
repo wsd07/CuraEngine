@@ -172,7 +172,7 @@ void WallsComputation::generateWalls(SliceLayer* layer, SectionType section)
     // 获取当前层的正确Z坐标（支持可变层厚）
     coord_t layer_z = layer->printZ;
 
-    spdlog::info("【可变层厚修复】第{}层，使用正确的层Z坐标: {:.2f}mm（来自layer->printZ，支持可变层厚）", layer_nr_, INT2MM(layer_z));
+    //CURA_INFO("【可变层厚修复】第{}层，使用正确的层Z坐标: {:.2f}mm（来自layer->printZ，支持可变层厚）", layer_nr_, INT2MM(layer_z));
 
     for (SliceLayerPart& part : layer->parts)
     {

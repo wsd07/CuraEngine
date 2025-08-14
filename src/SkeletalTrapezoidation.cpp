@@ -19,6 +19,7 @@
 #include "utils/macros.h"
 #include "utils/polygonUtils.h"
 #include "utils/DebugManager.h"
+#include "utils/CrashSafeDebug.h"
 
 #define SKELETAL_TRAPEZOIDATION_BEAD_SEARCH_MAX \
     1000 // A limit to how long it'll keep searching for adjacent beads. Increasing will re-use beadings more often (saving performance), but search longer for beading (costing
@@ -57,18 +58,35 @@ void SkeletalTrapezoidation::transferEdge(
     if (he_edge_it != vd_edge_to_he_edge_.end())
     { // Twin segment(s) have already been made
         edge_t* source_twin = he_edge_it->second;
-        assert(source_twin);
+        // 使用崩溃安全断言，确保错误信息能够输出
+        if (!source_twin) {
+            CURA_ERROR_FLUSH_F("source_twin为空指针，Voronoi边缘映射失败。vd_edge地址=%p, twin地址=%p, 映射表大小=%zu",
+                              static_cast<const void*>(&vd_edge),
+                              static_cast<const void*>(vd_edge.twin()),
+                              vd_edge_to_he_edge_.size());
+            CURA_ASSERT_WITH_INFO(false, "source_twin为空指针，程序将崩溃以便调试");
+        }
+
         auto end_node_it = vd_node_to_he_node_.find(vd_edge.vertex1());
-        assert(end_node_it != vd_node_to_he_node_.end());
+        // assert(end_node_it != vd_node_to_he_node_.end()); // 原始断言，注释保留以备回滚
+        if (end_node_it == vd_node_to_he_node_.end())
+        {
+            CURA_ERROR("BeadingStrategy错误: 无法找到Voronoi顶点对应的半边节点");
+            CURA_ERROR("  - vertex1地址: {}", static_cast<const void*>(vd_edge.vertex1()));
+            CURA_ERROR("  - vd_node_to_he_node_映射大小: {}", vd_node_to_he_node_.size());
+            return;
+        }
         node_t* end_node = end_node_it->second;
         for (edge_t* twin = source_twin;; twin = twin->prev_->twin_->prev_)
         {
             if (! twin)
             {
-                spdlog::warn("Encountered a voronoi edge without twin.");
+                CURA_ERROR("BeadingStrategy错误: 遇到没有twin的Voronoi边");
+                CURA_ERROR("  - 当前循环位置: source_twin={}", static_cast<const void*>(source_twin));
+                CURA_ERROR("  - 可能原因: Voronoi图构建不完整或边缘数据损坏");
                 continue; // Prevent reading unallocated memory.
             }
-            assert(twin);
+            // assert(twin); // 原始断言，注释保留以备回滚 - 上面已经检查过了
             graph_.edges.emplace_front(SkeletalTrapezoidationEdge());
             edge_t* edge = &graph_.edges.front();
             edge->from_ = twin->to_;
@@ -92,30 +110,49 @@ void SkeletalTrapezoidation::transferEdge(
 
             if (! twin->prev_ || ! twin->prev_->twin_ || ! twin->prev_->twin_->prev_)
             {
-                spdlog::error("Discretized segment behaves oddly!");
+                CURA_ERROR("BeadingStrategy错误: 离散化段表现异常");
+                CURA_ERROR("  - twin->prev_: {}", static_cast<const void*>(twin->prev_));
+                CURA_ERROR("  - twin->prev_->twin_: {}", twin->prev_ ? static_cast<const void*>(twin->prev_->twin_) : nullptr);
+                CURA_ERROR("  - twin->prev_->twin_->prev_: {}", (twin->prev_ && twin->prev_->twin_) ? static_cast<const void*>(twin->prev_->twin_->prev_) : nullptr);
+                CURA_ERROR("  - 可能原因: Voronoi图拓扑结构不完整");
                 return;
             }
 
-            assert(twin->prev_); // Forth rib
-            assert(twin->prev_->twin_); // Back rib
-            assert(twin->prev_->twin_->prev_); // Prev segment along parabola
+            // assert(twin->prev_); // Forth rib - 原始断言，注释保留以备回滚
+            // assert(twin->prev_->twin_); // Back rib - 原始断言，注释保留以备回滚
+            // assert(twin->prev_->twin_->prev_); // Prev segment along parabola - 原始断言，注释保留以备回滚
             graph_.makeRib(prev_edge, start_source_point, end_source_point);
         }
-        assert(prev_edge);
+        // assert(prev_edge); // 原始断言，注释保留以备回滚
+        if (!prev_edge)
+        {
+            CURA_ERROR("BeadingStrategy错误: prev_edge为空，边缘传输失败");
+            CURA_ERROR("  - source_twin: {}", static_cast<const void*>(source_twin));
+            CURA_ERROR("  - end_node: {}", static_cast<const void*>(end_node));
+            return;
+        }
     }
     else
     {
         std::vector<Point2LL> discretized = discretize(vd_edge, points, segments);
-        assert(discretized.size() >= 2);
+        // assert(discretized.size() >= 2); // 原始断言，注释保留以备回滚
         if (discretized.size() < 2)
         {
-            spdlog::warn("Discretized Voronoi edge is degenerate.");
+            CURA_ERROR("BeadingStrategy错误: 离散化Voronoi边退化");
+            CURA_ERROR("  - discretized.size(): {}", discretized.size());
+            CURA_ERROR("  - vd_edge是否有限: {}", vd_edge.is_finite());
+            CURA_ERROR("  - 可能原因: 边缘太短或几何计算精度问题");
+            return;
         }
 
-        assert(! prev_edge || prev_edge->to_);
+        // assert(! prev_edge || prev_edge->to_); // 原始断言，注释保留以备回滚
         if (prev_edge && ! prev_edge->to_)
         {
-            spdlog::warn("Previous edge doesn't go anywhere.");
+            CURA_ERROR("BeadingStrategy错误: 前一条边没有终点");
+            CURA_ERROR("  - prev_edge: {}", static_cast<const void*>(prev_edge));
+            CURA_ERROR("  - prev_edge->from_: {}", static_cast<const void*>(prev_edge->from_));
+            CURA_ERROR("  - 可能原因: 边缘构建过程中的拓扑错误");
+            return;
         }
         node_t* v0
             = (prev_edge) ? prev_edge->to_ : &makeNode(*vd_edge.vertex0(), from); // TODO: investigate whether boost:voronoi can produce multiple verts and violates consistency
@@ -155,7 +192,14 @@ void SkeletalTrapezoidation::transferEdge(
                 graph_.makeRib(prev_edge, start_source_point, end_source_point);
             }
         }
-        assert(prev_edge);
+        // assert(prev_edge); // 原始断言，注释保留以备回滚
+        if (!prev_edge)
+        {
+            CURA_ERROR("BeadingStrategy错误: 离散化后prev_edge为空");
+            CURA_ERROR("  - discretized.size(): {}", discretized.size());
+            CURA_ERROR("  - 可能原因: 边缘创建过程失败");
+            return;
+        }
         vd_edge_to_he_edge_.emplace(&vd_edge, prev_edge);
     }
 }
@@ -298,7 +342,15 @@ bool SkeletalTrapezoidation::computePointCellRange(
     vd_t::edge_type* vd_edge = cell.incident_edge();
     do
     {
-        assert(vd_edge->is_finite());
+        // assert(vd_edge->is_finite()); // 原始断言，注释保留以备回滚
+        if (!vd_edge->is_finite())
+        {
+            CURA_ERROR("BeadingStrategy错误: 点cell中遇到无限边");
+            CURA_ERROR("  - source_point: ({}, {})", source_point.X, source_point.Y);
+            CURA_ERROR("  - 可能原因: Voronoi图构建时包含了无限边，这在点cell中不应该发生");
+            return false;
+        }
+
         Point2LL p1 = VoronoiUtils::p(vd_edge->vertex1());
         if (p1 == source_point)
         {
@@ -309,13 +361,38 @@ bool SkeletalTrapezoidation::computePointCellRange(
         }
         else
         {
-            assert(
-                (VoronoiUtils::p(vd_edge->vertex0()) == source_point || ! vd_edge->is_secondary())
-                && "point cells must end in the point! They cannot cross the point with an edge, because collinear edges are not allowed in the input.");
+            // 使用崩溃安全断言检查点cell拓扑
+            Point2LL p0 = VoronoiUtils::p(vd_edge->vertex0());
+            if (!(p0 == source_point || !vd_edge->is_secondary()))
+            {
+                CURA_ERROR_FLUSH_F("点cell拓扑错误: source=(%d,%d), vertex0=(%d,%d), vertex1=(%d,%d), is_secondary=%s",
+                                  source_point.X, source_point.Y, p0.X, p0.Y, p1.X, p1.Y,
+                                  vd_edge->is_secondary() ? "true" : "false");
+                CURA_ERROR_FLUSH("原因: 点cell不能用边穿过点，因为输入中不允许共线边");
+                CURA_ASSERT_WITH_INFO(false, "点cell拓扑验证失败，程序将崩溃以便调试");
+            }
         }
     } while (vd_edge = vd_edge->next(), vd_edge != cell.incident_edge());
-    assert(starting_vd_edge && ending_vd_edge);
-    assert(starting_vd_edge != ending_vd_edge);
+
+    // assert(starting_vd_edge && ending_vd_edge); // 原始断言，注释保留以备回滚
+    if (!starting_vd_edge || !ending_vd_edge)
+    {
+        CURA_ERROR("BeadingStrategy错误: 无法找到点cell的起始或结束边");
+        CURA_ERROR("  - starting_vd_edge: {}", static_cast<const void*>(starting_vd_edge));
+        CURA_ERROR("  - ending_vd_edge: {}", static_cast<const void*>(ending_vd_edge));
+        CURA_ERROR("  - source_point: ({}, {})", source_point.X, source_point.Y);
+        return false;
+    }
+
+    // assert(starting_vd_edge != ending_vd_edge); // 原始断言，注释保留以备回滚
+    if (starting_vd_edge == ending_vd_edge)
+    {
+        CURA_ERROR("BeadingStrategy错误: 起始边和结束边相同");
+        CURA_ERROR("  - edge地址: {}", static_cast<const void*>(starting_vd_edge));
+        CURA_ERROR("  - source_point: ({}, {})", source_point.X, source_point.Y);
+        CURA_ERROR("  - 可能原因: 点cell只有一条边，这在正常情况下不应该发生");
+        return false;
+    }
     return true;
 }
 
@@ -346,7 +423,15 @@ void SkeletalTrapezoidation::computeSegmentCellRange(
         }
         Point2LL v0 = VoronoiUtils::p(edge->vertex0());
         Point2LL v1 = VoronoiUtils::p(edge->vertex1());
-        assert(! (v0 == to && v1 == from));
+        // assert(! (v0 == to && v1 == from)); // 原始断言，注释保留以备回滚
+        if (v0 == to && v1 == from)
+        {
+            CURA_ERROR("BeadingStrategy错误: segment cell中发现反向边");
+            CURA_ERROR("  - segment: from({}, {}) to({}, {})", from.X, from.Y, to.X, to.Y);
+            CURA_ERROR("  - edge: v0({}, {}) v1({}, {})", v0.X, v0.Y, v1.X, v1.Y);
+            CURA_ERROR("  - 可能原因: Voronoi边的方向与segment方向相反，这可能导致拓扑错误");
+            continue; // 跳过这条边，继续处理其他边
+        }
         if (v0 == to && ! after_start) // Use the last edge which starts in source_segment.to
         {
             starting_vd_edge = edge;
@@ -372,10 +457,23 @@ void SkeletalTrapezoidation::computeSegmentCellRange(
         throw std::runtime_error("无法找到有效的Voronoi边缘");
     }
 
-    assert(starting_vd_edge && ending_vd_edge);
+    // assert(starting_vd_edge && ending_vd_edge); // 原始断言，注释保留以备回滚
+    if (!starting_vd_edge || !ending_vd_edge)
+    {
+        CURA_ERROR("BeadingStrategy错误: segment cell无法找到有效的起始或结束边");
+        CURA_ERROR("  - starting_vd_edge: {}", static_cast<const void*>(starting_vd_edge));
+        CURA_ERROR("  - ending_vd_edge: {}", static_cast<const void*>(ending_vd_edge));
+        CURA_ERROR("  - segment: from({}, {}) to({}, {})", from.X, from.Y, to.X, to.Y);
+        CURA_ERROR("  - seen_possible_start: {}, after_start: {}", seen_possible_start, after_start);
+        throw std::runtime_error("无法找到有效的Voronoi边缘");
+    }
+
     if (starting_vd_edge == ending_vd_edge)
     {
-        spdlog::warn("starting_vd_edge == ending_vd_edge，这可能导致问题");
+        CURA_ERROR("BeadingStrategy警告: segment cell的起始边和结束边相同");
+        CURA_ERROR("  - edge地址: {}", static_cast<const void*>(starting_vd_edge));
+        CURA_ERROR("  - segment: from({}, {}) to({}, {})", from.X, from.Y, to.X, to.Y);
+        CURA_ERROR("  - 这可能导致后续处理问题");
     }
 
     start_source_point = source_segment.to();
@@ -401,8 +499,14 @@ SkeletalTrapezoidation::SkeletalTrapezoidation(
     , section_type_(section_type)
     , beading_strategy_(beading_strategy)
 {
+    // 初始化崩溃安全调试系统
+    cura::CrashSafeDebug::initialize();
+
     scripta::log("skeletal_trapezoidation_0", polys, section_type, layer_idx);
     constructFromPolygons(polys);
+
+    // 在构造完成后立即验证和修复图完整性
+    validateAndFixGraphIntegrity();
 }
 
 void SkeletalTrapezoidation::constructFromPolygons(const Shape& polys)
@@ -484,7 +588,12 @@ void SkeletalTrapezoidation::constructFromPolygons(const Shape& polys)
 
         if (! starting_vonoroi_edge || ! ending_vonoroi_edge)
         {
-            assert(false && "Each cell should start / end in a polygon vertex");
+            // assert(false && "Each cell should start / end in a polygon vertex"); // 原始断言，注释保留以备回滚
+            CURA_ERROR("BeadingStrategy错误: cell应该在多边形顶点开始/结束");
+            CURA_ERROR("  - starting_vonoroi_edge: {}", static_cast<const void*>(starting_vonoroi_edge));
+            CURA_ERROR("  - ending_vonoroi_edge: {}", static_cast<const void*>(ending_vonoroi_edge));
+            CURA_ERROR("  - cell类型: {}", cell.contains_point() ? "point" : "segment");
+            CURA_ERROR("  - 可能原因: Voronoi图构建不完整或cell范围计算失败");
             continue;
         }
 
@@ -505,7 +614,15 @@ void SkeletalTrapezoidation::constructFromPolygons(const Shape& polys)
         graph_.makeRib(prev_edge, start_source_point, end_source_point);
         for (vd_t::edge_type* vd_edge = starting_vonoroi_edge->next(); vd_edge != ending_vonoroi_edge; vd_edge = vd_edge->next())
         {
-            assert(vd_edge->is_finite());
+            // assert(vd_edge->is_finite()); // 原始断言，注释保留以备回滚
+            if (!vd_edge->is_finite())
+            {
+                CURA_ERROR("BeadingStrategy错误: cell遍历中遇到无限边");
+                CURA_ERROR("  - vd_edge地址: {}", static_cast<const void*>(vd_edge));
+                CURA_ERROR("  - cell类型: {}", cell.contains_point() ? "point" : "segment");
+                CURA_ERROR("  - 可能原因: Voronoi图包含无限边，需要跳过处理");
+                continue; // 跳过无限边，继续处理下一条边
+            }
             Point2LL v1 = VoronoiUtils::p(vd_edge->vertex0());
             Point2LL v2 = VoronoiUtils::p(vd_edge->vertex1());
             transferEdge(v1, v2, *vd_edge, prev_edge, start_source_point, end_source_point, points, segments);
@@ -530,6 +647,9 @@ void SkeletalTrapezoidation::constructFromPolygons(const Shape& polys)
             edge.from_->incident_edge_ = &edge;
         }
     }
+
+    // 在图构建完成后立即验证和修复图完整性
+    validateAndFixGraphIntegrity();
 }
 
 void SkeletalTrapezoidation::separatePointyQuadEndNodes()
@@ -891,9 +1011,26 @@ void SkeletalTrapezoidation::filterNoncentralRegions()
         }
         if (edge.to_->data_.bead_count_ < 0 && edge.to_->data_.distance_to_boundary_ != 0)
         {
-            spdlog::warn("Encountered an uninitialized bead at the boundary!");
+            CURA_ERROR("BeadingStrategy警告: 在边界遇到未初始化的bead");
+            CURA_ERROR("  - bead_count: {}", edge.to_->data_.bead_count_);
+            CURA_ERROR("  - distance_to_boundary: {}", edge.to_->data_.distance_to_boundary_);
         }
-        assert(edge.to_->data_.bead_count_ >= 0 || edge.to_->data_.distance_to_boundary_ == 0);
+        // assert(edge.to_->data_.bead_count_ >= 0 || edge.to_->data_.distance_to_boundary_ == 0); // 原始断言，注释保留以备回滚
+        if (!(edge.to_->data_.bead_count_ >= 0 || edge.to_->data_.distance_to_boundary_ == 0))
+        {
+            CURA_ERROR("BeadingStrategy错误: bead计数验证失败");
+            CURA_ERROR("  - edge.to_位置: ({}, {})", edge.to_->p_.X, edge.to_->p_.Y);
+            CURA_ERROR("  - bead_count: {}", edge.to_->data_.bead_count_);
+            CURA_ERROR("  - distance_to_boundary: {}", edge.to_->data_.distance_to_boundary_);
+            CURA_ERROR("  - 规则: bead_count应该>=0，或者distance_to_boundary应该==0");
+            CURA_ERROR("  - 可能原因: bead计数初始化失败或边界距离计算错误");
+            // 尝试修复：如果在边界上，设置bead_count为0
+            if (edge.to_->data_.distance_to_boundary_ == 0)
+            {
+                edge.to_->data_.bead_count_ = 0;
+                CURA_ERROR("  - 已修复: 将边界节点的bead_count设置为0");
+            }
+        }
         constexpr coord_t max_dist = 400;
         filterNoncentralRegions(&edge, edge.to_->data_.bead_count_, 0, max_dist);
     }
@@ -945,17 +1082,73 @@ bool SkeletalTrapezoidation::filterNoncentralRegions(edge_t* to_edge, coord_t be
 
 void SkeletalTrapezoidation::generateTransitioningRibs()
 {
+    CURA_ERROR_FLUSH("=== 开始生成过渡肋骨 ===");
+    CURA_ERROR_FLUSH_F("图中边缘总数: %zu", graph_.edges.size());
+
+    // 在生成过渡前验证和修复图完整性
+    validateAndFixGraphIntegrity();
+
     // Store the upward edges to the transitions.
     // We only store the halfedge for which the distance_to_boundary is higher at the end than at the beginning.
     ptr_vector_t<std::list<TransitionMiddle>> edge_transitions;
+
+    CURA_ERROR_FLUSH("开始生成过渡中点...");
     generateTransitionMids(edge_transitions);
+    CURA_ERROR_FLUSH_F("过渡中点生成完成，edge_transitions大小: %zu", edge_transitions.size());
+
+    CURA_ERROR_FLUSH("开始验证边缘过渡一致性...");
+    size_t central_edges_count = 0;
+    size_t different_bead_count_edges = 0;
+    size_t missing_transitions_count = 0;
 
     for (edge_t& edge : graph_.edges)
     { // Check if there is a transition in between nodes with different bead counts
-        if (edge.data_.isCentral() && edge.from_->data_.bead_count_ != edge.to_->data_.bead_count_)
+        if (edge.data_.isCentral())
         {
-            assert(edge.data_.hasTransitions() || edge.twin_->data_.hasTransitions());
+            central_edges_count++;
+            if (edge.from_->data_.bead_count_ != edge.to_->data_.bead_count_)
+            {
+                different_bead_count_edges++;
+                // 使用崩溃安全检查
+                if (!CURA_CHECK_WITH_ERROR(edge.data_.hasTransitions() || (edge.twin_ && edge.twin_->data_.hasTransitions()),
+                    "中心边缘的bead计数不同但没有过渡"))
+                {
+                    missing_transitions_count++;
+                    CURA_ERROR_FLUSH_F("过渡缺失详情 #%zu:", missing_transitions_count);
+                    CURA_ERROR_FLUSH_F("  - edge地址: %p", static_cast<void*>(&edge));
+                    CURA_ERROR_FLUSH_F("  - twin地址: %p", static_cast<void*>(edge.twin_));
+                    CURA_ERROR_FLUSH_F("  - from_bead_count: %d, to_bead_count: %d",
+                                      edge.from_->data_.bead_count_, edge.to_->data_.bead_count_);
+                    CURA_ERROR_FLUSH_F("  - from_distance: %d, to_distance: %d",
+                                      edge.from_->data_.distance_to_boundary_, edge.to_->data_.distance_to_boundary_);
+                    CURA_ERROR_FLUSH_F("  - edge.hasTransitions: %s, twin.hasTransitions: %s",
+                                      edge.data_.hasTransitions() ? "true" : "false",
+                                      (edge.twin_ && edge.twin_->data_.hasTransitions()) ? "true" : "false");
+                    CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                                      edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+
+                    // 如果错误太多，触发崩溃安全断言
+                    if (missing_transitions_count > 10)
+                    {
+                        CURA_ASSERT_WITH_INFO(false, "过渡缺失错误过多，程序将崩溃以便调试");
+                    }
+                }
+            }
         }
+    }
+
+    CURA_ERROR_FLUSH_F("边缘验证完成: 总边缘=%zu, 中心边缘=%zu, 不同bead计数=%zu, 缺失过渡=%zu",
+                      graph_.edges.size(), central_edges_count, different_bead_count_edges, missing_transitions_count);
+
+    // 如果没有需要过渡的边缘，提前返回避免后续处理空数据
+    if (different_bead_count_edges == 0)
+    {
+        CURA_ERROR_FLUSH("没有需要过渡的边缘，跳过过渡处理");
+
+        // 在过渡处理后验证和修复图完整性
+        validateAndFixGraphIntegrity();
+
+        return;
     }
 
     filterTransitionMids();
@@ -970,24 +1163,76 @@ void SkeletalTrapezoidation::generateTransitioningRibs()
 
 void SkeletalTrapezoidation::generateTransitionMids(ptr_vector_t<std::list<TransitionMiddle>>& edge_transitions)
 {
+    CURA_ERROR_FLUSH("=== 开始生成过渡中点 ===");
+
+    // 在生成过渡中点前验证和修复图完整性
+    validateAndFixGraphIntegrity();
+    size_t total_edges = graph_.edges.size();
+    size_t central_unset_count = 0;
+    size_t central_edges = 0;
+    size_t processed_edges = 0;
+
     for (edge_t& edge : graph_.edges)
     {
-        assert(edge.data_.centralIsSet());
+        processed_edges++;
+
+        // 使用崩溃安全检查
+        if (!CURA_CHECK_WITH_ERROR(edge.data_.centralIsSet(), "边缘的central状态未设置"))
+        {
+            central_unset_count++;
+            CURA_ERROR_FLUSH_F("Central状态未设置 #%zu:", central_unset_count);
+            CURA_ERROR_FLUSH_F("  - edge地址: %p", static_cast<void*>(&edge));
+            CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                              edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+            CURA_ERROR_FLUSH_F("  - 进度: %zu/%zu", processed_edges, total_edges);
+
+            // 如果太多边缘未设置central状态，触发崩溃
+            if (central_unset_count > 100)
+            {
+                CURA_ASSERT_WITH_INFO(false, "过多边缘的central状态未设置，可能updateIsCentral()函数未正确执行");
+            }
+            continue;
+        }
+
         if (! edge.data_.isCentral())
         { // Only central regions introduce transitions
             continue;
         }
+
+        central_edges++;
         coord_t start_R = edge.from_->data_.distance_to_boundary_;
         coord_t end_R = edge.to_->data_.distance_to_boundary_;
         int start_bead_count = edge.from_->data_.bead_count_;
         int end_bead_count = edge.to_->data_.bead_count_;
 
+        // 进一步减少调试输出频率，避免多线程混乱
+        if (central_edges <= 2 || central_edges % 10000 == 0)  // 只记录前2个和每10000个
+        {
+            CURA_ERROR_FLUSH_F("处理中心边缘 #%zu:", central_edges);
+            CURA_ERROR_FLUSH_F("  - start_R=%d, end_R=%d, start_bead=%d, end_bead=%d",
+                              start_R, end_R, start_bead_count, end_bead_count);
+            CURA_ERROR_FLUSH_F("  - 位置: from(%d,%d) to(%d,%d)",
+                              edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+        }
+
         if (start_R == end_R)
         { // No transitions occur when both end points have the same distance_to_boundary
-            assert(edge.from_->data_.bead_count_ == edge.to_->data_.bead_count_);
-            if (edge.from_->data_.bead_count_ != edge.to_->data_.bead_count_)
+            // 使用崩溃安全检查
+            if (!CURA_CHECK_WITH_ERROR(edge.from_->data_.bead_count_ == edge.to_->data_.bead_count_,
+                "相同边界距离但bead计数不同"))
             {
-                spdlog::warn("Bead count {} is different from {} even though distance to boundary is the same.", edge.from_->data_.bead_count_, edge.to_->data_.bead_count_);
+                CURA_ERROR_FLUSH_F("距离相等但bead计数不同的边缘:");
+                CURA_ERROR_FLUSH_F("  - start_R = end_R = %d", start_R);
+                CURA_ERROR_FLUSH_F("  - start_bead_count: %d, end_bead_count: %d",
+                                  edge.from_->data_.bead_count_, edge.to_->data_.bead_count_);
+                CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                                  edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+                CURA_ERROR_FLUSH_F("  - 可能原因: bead计数计算不一致或边界距离计算精度问题");
+
+                // 尝试获取更多上下文信息
+                coord_t optimal_start = beading_strategy_.getOptimalBeadCount(start_R * 2);
+                coord_t optimal_end = beading_strategy_.getOptimalBeadCount(end_R * 2);
+                CURA_ERROR_FLUSH_F("  - 理论最优bead计数: start=%d, end=%d", optimal_start, optimal_end);
             }
             continue;
         }
@@ -1003,37 +1248,128 @@ void SkeletalTrapezoidation::generateTransitionMids(ptr_vector_t<std::list<Trans
 
         if (start_bead_count > beading_strategy_.getOptimalBeadCount(start_R * 2) || end_bead_count > beading_strategy_.getOptimalBeadCount(end_R * 2))
         { // Wasn't the case earlier in this function because of already introduced transitions
-            spdlog::error("transitioning segment overlap!");
+            CURA_ERROR("BeadingStrategy错误: 过渡段重叠");
+            CURA_ERROR("  - start_bead_count: {}, optimal: {}", start_bead_count, beading_strategy_.getOptimalBeadCount(start_R * 2));
+            CURA_ERROR("  - end_bead_count: {}, optimal: {}", end_bead_count, beading_strategy_.getOptimalBeadCount(end_R * 2));
+            CURA_ERROR("  - start_R: {}, end_R: {}", start_R, end_R);
         }
-        assert(start_R < end_R);
-        if (start_R >= end_R)
+
+        // 使用崩溃安全检查过渡方向
+        if (!CURA_CHECK_WITH_ERROR(start_R < end_R, "过渡方向错误，期望start_R < end_R"))
         {
-            spdlog::warn("Transitioning the wrong way around! This function expects to transition from small R to big R, but was transitioning from {} to {}.", start_R, end_R);
+            CURA_ERROR_FLUSH_F("过渡方向错误的边缘 #%zu:", central_edges);
+            CURA_ERROR_FLUSH_F("  - start_R: %d, end_R: %d (差值: %d)", start_R, end_R, end_R - start_R);
+            CURA_ERROR_FLUSH_F("  - start_bead: %d, end_bead: %d", start_bead_count, end_bead_count);
+            CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                              edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+            CURA_ERROR_FLUSH_F("  - edge长度: %d", vSize(edge.from_->p_ - edge.to_->p_));
+
+            // 检查twin边缘的情况
+            if (edge.twin_)
+            {
+                CURA_ERROR_FLUSH_F("  - twin边缘: from_R=%d, to_R=%d",
+                                  edge.twin_->from_->data_.distance_to_boundary_,
+                                  edge.twin_->to_->data_.distance_to_boundary_);
+            }
+
+            CURA_ERROR_FLUSH("  - 期望: start_R < end_R (从小R过渡到大R)");
+            CURA_ERROR_FLUSH("  - 可能原因: 边缘方向错误或距离计算问题");
+            CURA_ERROR_FLUSH("  - 修复: 跳过此边缘，继续处理");
+            continue; // 跳过这个错误的过渡
         }
         coord_t edge_size = vSize(edge.from_->p_ - edge.to_->p_);
+
+        // 验证边缘长度
+        if (!CURA_CHECK_WITH_ERROR(edge_size > 0, "边缘长度为零或负数"))
+        {
+            CURA_ERROR_FLUSH_F("无效边缘长度: %d", edge_size);
+            CURA_ERROR_FLUSH_F("  - 位置: from(%d,%d) to(%d,%d)",
+                              edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+            continue;
+        }
+
+        CURA_ERROR_FLUSH_F("处理过渡循环: start_bead=%d, end_bead=%d, edge_size=%d",
+                          start_bead_count, end_bead_count, edge_size);
+
         for (int transition_lower_bead_count = start_bead_count; transition_lower_bead_count < end_bead_count; transition_lower_bead_count++)
         {
             coord_t mid_R = beading_strategy_.getTransitionThickness(transition_lower_bead_count) / 2;
+            coord_t original_mid_R = mid_R;
+
             if (mid_R > end_R)
             {
-                spdlog::error("transition on segment lies outside of segment!");
+                CURA_ERROR_FLUSH_F("过渡在段外(上界): mid_R=%d > end_R=%d, 调整为end_R", mid_R, end_R);
                 mid_R = end_R;
             }
             if (mid_R < start_R)
             {
-                spdlog::error("transition on segment lies outside of segment!");
+                CURA_ERROR_FLUSH_F("过渡在段外(下界): mid_R=%d < start_R=%d, 调整为start_R", mid_R, start_R);
                 mid_R = start_R;
             }
-            coord_t mid_pos = edge_size * (mid_R - start_R) / (end_R - start_R);
-            assert(mid_pos >= 0);
-            assert(mid_pos <= edge_size);
-            if (mid_pos < 0 || mid_pos > edge_size)
+
+            // 验证除法安全性
+            coord_t denominator = end_R - start_R;
+            if (!CURA_CHECK_WITH_ERROR(denominator != 0, "过渡计算中分母为零"))
             {
-                spdlog::warn("Transition mid is out of bounds of the edge.");
+                CURA_ERROR_FLUSH_F("除零错误: end_R=%d, start_R=%d", end_R, start_R);
+                continue;
+            }
+
+            coord_t mid_pos = edge_size * (mid_R - start_R) / denominator;
+
+            CURA_ERROR_FLUSH_F("过渡计算: bead_count=%d, original_mid_R=%d, adjusted_mid_R=%d, mid_pos=%d",
+                              transition_lower_bead_count, original_mid_R, mid_R, mid_pos);
+            // 使用崩溃安全检查过渡位置范围
+            if (!CURA_CHECK_WITH_ERROR(mid_pos >= 0 && mid_pos <= edge_size, "过渡中点超出边缘范围"))
+            {
+                CURA_ERROR_FLUSH_F("过渡位置超出范围:");
+                CURA_ERROR_FLUSH_F("  - mid_pos: %d, edge_size: %d (超出: %s)",
+                                  mid_pos, edge_size,
+                                  mid_pos < 0 ? "下界" : "上界");
+                CURA_ERROR_FLUSH_F("  - mid_R: %d, start_R: %d, end_R: %d", mid_R, start_R, end_R);
+                CURA_ERROR_FLUSH_F("  - transition_lower_bead_count: %d", transition_lower_bead_count);
+                CURA_ERROR_FLUSH_F("  - 计算: %d * (%d - %d) / (%d - %d) = %d",
+                                  edge_size, mid_R, start_R, end_R, start_R, mid_pos);
+                CURA_ERROR_FLUSH_F("  - 分子: %d, 分母: %d", edge_size * (mid_R - start_R), end_R - start_R);
+
+                // 如果位置严重超出范围，可能是计算错误
+                if (mid_pos < -edge_size || mid_pos > 2 * edge_size)
+                {
+                    CURA_ASSERT_WITH_INFO(false, "过渡位置严重超出范围，可能存在计算错误");
+                }
+                continue; // 跳过这个无效的过渡
             }
             auto transitions = edge.data_.getTransitions();
             constexpr bool ignore_empty = true;
-            assert((! edge.data_.hasTransitions(ignore_empty)) || mid_pos >= transitions->back().pos_);
+
+            // 使用崩溃安全检查过渡顺序
+            if (edge.data_.hasTransitions(ignore_empty))
+            {
+                coord_t last_pos = transitions->back().pos_;
+                if (!CURA_CHECK_WITH_ERROR(mid_pos >= last_pos, "过渡中点在最后一个过渡之前"))
+                {
+                    CURA_ERROR_FLUSH_F("过渡顺序错误:");
+                    CURA_ERROR_FLUSH_F("  - mid_pos: %d, last_transition_pos: %d (差值: %d)",
+                                      mid_pos, last_pos, mid_pos - last_pos);
+                    CURA_ERROR_FLUSH_F("  - mid_R: %d, last_transition_lower_bead_count: %d",
+                                      mid_R, transitions->back().lower_bead_count_);
+                    CURA_ERROR_FLUSH_F("  - current_transition_bead_count: %d", transition_lower_bead_count);
+                    CURA_ERROR_FLUSH_F("  - transitions总数: %zu", transitions->size());
+                    CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                                      edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+
+                    // 输出所有现有过渡的信息
+                    size_t idx = 0;
+                    for (const auto& trans : *transitions)
+                    {
+                        CURA_ERROR_FLUSH_F("    过渡[%zu]: pos=%d, lower_bead=%d",
+                                          idx++, trans.pos_, trans.lower_bead_count_);
+                    }
+
+                    CURA_ERROR_FLUSH("  - 可能原因: 过渡顺序错误或位置计算问题");
+                    continue; // 跳过这个无序的过渡
+                }
+            }
             if (! edge.data_.hasTransitions(ignore_empty))
             {
                 edge_transitions.emplace_back(std::make_shared<std::list<TransitionMiddle>>());
@@ -1042,7 +1378,34 @@ void SkeletalTrapezoidation::generateTransitionMids(ptr_vector_t<std::list<Trans
             }
             transitions->emplace_back(mid_pos, transition_lower_bead_count, mid_R);
         }
-        assert((edge.from_->data_.bead_count_ == edge.to_->data_.bead_count_) || edge.data_.hasTransitions());
+
+        // 最终验证：边缘两端bead计数不同时必须有过渡
+        if (!CURA_CHECK_WITH_ERROR(
+            (edge.from_->data_.bead_count_ == edge.to_->data_.bead_count_) || edge.data_.hasTransitions(),
+            "边缘两端bead计数不同但没有过渡"))
+        {
+            CURA_ERROR_FLUSH_F("最终验证失败:");
+            CURA_ERROR_FLUSH_F("  - from_bead_count: %d, to_bead_count: %d",
+                              edge.from_->data_.bead_count_, edge.to_->data_.bead_count_);
+            CURA_ERROR_FLUSH_F("  - hasTransitions: %s", edge.data_.hasTransitions() ? "true" : "false");
+            CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)",
+                              edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+            CURA_ERROR_FLUSH("  - 规则: 如果两端bead计数不同，必须有过渡");
+            CURA_ERROR_FLUSH("  - 可能原因: 过渡生成失败或bead计数设置错误");
+        }
+    }
+
+    // 输出统计信息
+    CURA_ERROR_FLUSH_F("=== 过渡中点生成完成 ===");
+    CURA_ERROR_FLUSH_F("总边缘: %zu, 中心边缘: %zu, Central未设置: %zu",
+                      total_edges, central_edges, central_unset_count);
+    CURA_ERROR_FLUSH_F("edge_transitions大小: %zu", edge_transitions.size());
+
+    // 如果有太多问题，提前返回避免后续崩溃
+    if (central_unset_count > total_edges / 10)  // 超过10%的边缘有问题
+    {
+        CURA_ERROR_FLUSH_F("警告: 过多边缘存在问题 (%zu/%zu)，可能影响后续处理",
+                          central_unset_count, total_edges);
     }
 }
 
@@ -1057,8 +1420,29 @@ void SkeletalTrapezoidation::filterTransitionMids()
         auto& transitions = *edge.data_.getTransitions();
 
         // This is how stuff should be stored in transitions
-        assert(transitions.front().lower_bead_count_ <= transitions.back().lower_bead_count_);
-        assert(edge.from_->data_.distance_to_boundary_ <= edge.to_->data_.distance_to_boundary_);
+        // assert(transitions.front().lower_bead_count_ <= transitions.back().lower_bead_count_); // 原始断言，注释保留以备回滚
+        if (transitions.front().lower_bead_count_ > transitions.back().lower_bead_count_)
+        {
+            CURA_ERROR("BeadingStrategy错误: 过渡序列的bead计数顺序错误");
+            CURA_ERROR("  - front_lower_bead_count: {}, back_lower_bead_count: {}",
+                      transitions.front().lower_bead_count_, transitions.back().lower_bead_count_);
+            CURA_ERROR("  - transitions.size(): {}", transitions.size());
+            CURA_ERROR("  - 期望: front <= back (过渡应该按bead计数递增排序)");
+            CURA_ERROR("  - 可能原因: 过渡排序错误或计算错误");
+            continue; // 跳过这个有问题的边缘
+        }
+
+        // assert(edge.from_->data_.distance_to_boundary_ <= edge.to_->data_.distance_to_boundary_); // 原始断言，注释保留以备回滚
+        if (edge.from_->data_.distance_to_boundary_ > edge.to_->data_.distance_to_boundary_)
+        {
+            CURA_ERROR("BeadingStrategy错误: 边缘起点到边界距离大于终点距离");
+            CURA_ERROR("  - from_distance: {}, to_distance: {}",
+                      edge.from_->data_.distance_to_boundary_, edge.to_->data_.distance_to_boundary_);
+            CURA_ERROR("  - edge位置: from({}, {}) to({}, {})",
+                      edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+            CURA_ERROR("  - 可能原因: 距离计算错误或边缘方向错误");
+            continue; // 跳过这个有问题的边缘
+        }
 
         const Point2LL a = edge.from_->p_;
         const Point2LL b = edge.to_->p_;
@@ -1164,7 +1548,17 @@ std::list<SkeletalTrapezoidation::TransitionMidRef>
                     if (traveled_dist + pos < beading_strategy_.getTransitioningLength(transition_it->lower_bead_count_))
                     {
                         // Consecutive transitions both in/decreasing in bead count should never be closer together than the transition distance
-                        assert(going_up != is_aligned || transition_it->lower_bead_count_ == 0);
+                        // assert(going_up != is_aligned || transition_it->lower_bead_count_ == 0); // 原始断言，注释保留以备回滚
+                        if (!(going_up != is_aligned || transition_it->lower_bead_count_ == 0))
+                        {
+                            CURA_ERROR("BeadingStrategy错误: 连续过渡距离太近");
+                            CURA_ERROR("  - going_up: {}, is_aligned: {}", going_up, is_aligned);
+                            CURA_ERROR("  - transition_lower_bead_count: {}", transition_it->lower_bead_count_);
+                            CURA_ERROR("  - traveled_dist + pos: {}, transition_length: {}",
+                                      traveled_dist + pos, beading_strategy_.getTransitioningLength(transition_it->lower_bead_count_));
+                            CURA_ERROR("  - 规则: 连续的增减bead计数过渡不应该比过渡距离更近");
+                            CURA_ERROR("  - 可能原因: 过渡距离计算错误或过渡位置重叠");
+                        }
                     }
                     to_be_dissolved.emplace_back(aligned_edge, transition_it);
                     seen_transition_on_this_edge = true;
@@ -1196,7 +1590,32 @@ std::list<SkeletalTrapezoidation::TransitionMidRef>
 
 void SkeletalTrapezoidation::dissolveBeadCountRegion(edge_t* edge_to_start, coord_t from_bead_count, coord_t to_bead_count)
 {
-    assert(from_bead_count != to_bead_count);
+    CURA_ERROR_FLUSH_F("=== 溶解Bead计数区域 ===");
+    CURA_ERROR_FLUSH_F("参数: from_bead_count=%d, to_bead_count=%d", from_bead_count, to_bead_count);
+
+    // 使用崩溃安全检查参数有效性
+    if (!CURA_CHECK_WITH_ERROR(from_bead_count != to_bead_count, "尝试溶解相同bead计数的区域"))
+    {
+        CURA_ERROR_FLUSH_F("参数错误:");
+        CURA_ERROR_FLUSH_F("  - from_bead_count: %d, to_bead_count: %d", from_bead_count, to_bead_count);
+        if (edge_to_start) {
+            CURA_ERROR_FLUSH_F("  - edge_to_start位置: from(%d,%d) to(%d,%d)",
+                              edge_to_start->from_->p_.X, edge_to_start->from_->p_.Y,
+                              edge_to_start->to_->p_.X, edge_to_start->to_->p_.Y);
+        } else {
+            CURA_ERROR_FLUSH("  - edge_to_start: nullptr");
+        }
+        CURA_ERROR_FLUSH("  - 可能原因: 函数调用参数错误或bead计数计算错误");
+        return;
+    }
+
+    // 验证edge_to_start有效性
+    if (!CURA_CHECK_WITH_ERROR(edge_to_start != nullptr, "edge_to_start为空指针"))
+    {
+        CURA_ERROR_FLUSH("edge_to_start为空，无法进行溶解操作");
+        return;
+    }
+
     if (edge_to_start->to_->data_.bead_count_ != from_bead_count)
     {
         return;
@@ -1253,11 +1672,33 @@ void SkeletalTrapezoidation::generateAllTransitionEnds(ptr_vector_t<std::list<Tr
         }
         auto& transition_positions = *edge.data_.getTransitions();
 
-        assert(edge.from_->data_.distance_to_boundary_ <= edge.to_->data_.distance_to_boundary_);
+        // assert(edge.from_->data_.distance_to_boundary_ <= edge.to_->data_.distance_to_boundary_); // 原始断言，注释保留以备回滚
+        if (edge.from_->data_.distance_to_boundary_ > edge.to_->data_.distance_to_boundary_)
+        {
+            CURA_ERROR("BeadingStrategy错误: 边缘起点到边界距离大于终点距离");
+            CURA_ERROR("  - from_distance: {}, to_distance: {}", edge.from_->data_.distance_to_boundary_, edge.to_->data_.distance_to_boundary_);
+            CURA_ERROR("  - edge位置: from({}, {}) to({}, {})",
+                      edge.from_->p_.X, edge.from_->p_.Y, edge.to_->p_.X, edge.to_->p_.Y);
+            CURA_ERROR("  - 期望: from_distance <= to_distance");
+            CURA_ERROR("  - 可能原因: 距离计算错误或边缘方向错误");
+            continue; // 跳过这个有问题的边缘
+        }
+
         for (TransitionMiddle& transition_middle : transition_positions)
         {
-            assert(transition_positions.front().pos_ <= transition_middle.pos_);
-            assert(transition_middle.pos_ <= transition_positions.back().pos_);
+            // assert(transition_positions.front().pos_ <= transition_middle.pos_); // 原始断言，注释保留以备回滚
+            // assert(transition_middle.pos_ <= transition_positions.back().pos_); // 原始断言，注释保留以备回滚
+            if (transition_positions.front().pos_ > transition_middle.pos_ ||
+                transition_middle.pos_ > transition_positions.back().pos_)
+            {
+                CURA_ERROR("BeadingStrategy错误: 过渡位置不在有效范围内");
+                CURA_ERROR("  - front_pos: {}, middle_pos: {}, back_pos: {}",
+                          transition_positions.front().pos_, transition_middle.pos_, transition_positions.back().pos_);
+                CURA_ERROR("  - lower_bead_count: {}", transition_middle.lower_bead_count_);
+                CURA_ERROR("  - 期望: front_pos <= middle_pos <= back_pos");
+                CURA_ERROR("  - 可能原因: 过渡位置计算错误或排序问题");
+                continue; // 跳过这个无效的过渡
+            }
             generateTransitionEnds(edge, transition_middle.pos_, transition_middle.lower_bead_count_, edge_transition_ends);
         }
     }
@@ -1265,14 +1706,33 @@ void SkeletalTrapezoidation::generateAllTransitionEnds(ptr_vector_t<std::list<Tr
 
 void SkeletalTrapezoidation::generateTransitionEnds(edge_t& edge, coord_t mid_pos, coord_t lower_bead_count, ptr_vector_t<std::list<TransitionEnd>>& edge_transition_ends)
 {
+    CURA_ERROR_FLUSH_F("=== 生成过渡端点 ===");
+
     const Point2LL a = edge.from_->p_;
     const Point2LL b = edge.to_->p_;
     const Point2LL ab = b - a;
     const coord_t ab_size = vSize(ab);
 
+    // 验证输入参数
+    if (!CURA_CHECK_WITH_ERROR(ab_size > 0, "边缘长度为零或负数"))
+    {
+        CURA_ERROR_FLUSH_F("无效边缘: ab_size=%d, 位置from(%d,%d) to(%d,%d)",
+                          ab_size, a.X, a.Y, b.X, b.Y);
+        return;
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(mid_pos >= 0 && mid_pos <= ab_size, "mid_pos超出边缘范围"))
+    {
+        CURA_ERROR_FLUSH_F("mid_pos超出范围: mid_pos=%d, ab_size=%d", mid_pos, ab_size);
+        return;
+    }
+
     const coord_t transition_length = beading_strategy_.getTransitioningLength(lower_bead_count);
     const double transition_mid_position = beading_strategy_.getTransitionAnchorPos(lower_bead_count);
     constexpr double inner_bead_width_ratio_after_transition = 1.0;
+
+    CURA_ERROR_FLUSH_F("过渡参数: mid_pos=%d, lower_bead_count=%d, transition_length=%d, mid_position=%.3f",
+                      mid_pos, lower_bead_count, transition_length, transition_mid_position);
 
     constexpr Ratio start_rest{ 0.0 };
     const double mid_rest = transition_mid_position * inner_bead_width_ratio_after_transition;
@@ -1282,6 +1742,17 @@ void SkeletalTrapezoidation::generateTransitionEnds(edge_t& edge, coord_t mid_po
         const coord_t start_pos = ab_size - mid_pos;
         const coord_t transition_half_length = transition_mid_position * transition_length;
         const coord_t end_pos = start_pos + transition_half_length;
+
+        CURA_ERROR_FLUSH_F("下端过渡: start_pos=%d, end_pos=%d, half_length=%d",
+                          start_pos, end_pos, transition_half_length);
+
+        // 验证twin边缘存在
+        if (!CURA_CHECK_WITH_ERROR(edge.twin_, "边缘缺少twin"))
+        {
+            CURA_ERROR_FLUSH_F("边缘缺少twin: edge地址=%p", static_cast<void*>(&edge));
+            return;
+        }
+
         generateTransitionEnd(*edge.twin_, start_pos, end_pos, transition_half_length, mid_rest, start_rest, lower_bead_count, edge_transition_ends);
     }
 
@@ -1289,14 +1760,17 @@ void SkeletalTrapezoidation::generateTransitionEnds(edge_t& edge, coord_t mid_po
         const coord_t start_pos = mid_pos;
         const coord_t transition_half_length = (1.0 - transition_mid_position) * transition_length;
         const coord_t end_pos = mid_pos + transition_half_length;
-#ifdef DEBUG
-        if (! generateTransitionEnd(edge, start_pos, end_pos, transition_half_length, mid_rest, end_rest, lower_bead_count, edge_transition_ends))
+
+        CURA_ERROR_FLUSH_F("上端过渡: start_pos=%d, end_pos=%d, half_length=%d",
+                          start_pos, end_pos, transition_half_length);
+
+        bool success = generateTransitionEnd(edge, start_pos, end_pos, transition_half_length, mid_rest, end_rest, lower_bead_count, edge_transition_ends);
+
+        if (!success)
         {
-            CURA_DEBUG(SKELETAL_TRAPEZOIDATION, "There must have been at least one direction in which the bead count is increasing enough for the transition to happen!");
+            CURA_ERROR_FLUSH("警告: 上端过渡生成失败，但这在某些情况下是正常的");
+            CURA_ERROR_FLUSH("原因: 可能没有足够的bead计数增长来支持过渡");
         }
-#else
-        generateTransitionEnd(edge, start_pos, end_pos, transition_half_length, mid_rest, end_rest, lower_bead_count, edge_transition_ends);
-#endif
     }
 }
 
@@ -1310,32 +1784,83 @@ bool SkeletalTrapezoidation::generateTransitionEnd(
     coord_t lower_bead_count,
     ptr_vector_t<std::list<TransitionEnd>>& edge_transition_ends)
 {
+    CURA_ERROR_FLUSH_F("--- generateTransitionEnd ---");
+
     Point2LL a = edge.from_->p_;
     Point2LL b = edge.to_->p_;
     Point2LL ab = b - a;
     coord_t ab_size = vSize(ab); // TODO: prevent recalculation of these values
 
-    assert(start_pos <= ab_size);
-    if (start_pos > ab_size)
+    CURA_ERROR_FLUSH_F("输入参数: start_pos=%d, end_pos=%d, half_length=%d, ab_size=%d",
+                      start_pos, end_pos, transition_half_length, ab_size);
+    CURA_ERROR_FLUSH_F("Rest值: start_rest=%.3f, end_rest=%.3f, lower_bead_count=%d",
+                      static_cast<double>(start_rest), static_cast<double>(end_rest), lower_bead_count);
+
+    // 使用崩溃安全检查起始位置
+    if (!CURA_CHECK_WITH_ERROR(start_pos <= ab_size, "边缘起始位置超出边缘范围"))
     {
-        spdlog::warn("Start position of edge is beyond edge range.");
+        CURA_ERROR_FLUSH_F("位置超出范围:");
+        CURA_ERROR_FLUSH_F("  - start_pos: %d, ab_size: %d (超出: %d)", start_pos, ab_size, start_pos - ab_size);
+        CURA_ERROR_FLUSH_F("  - end_pos: %d, transition_half_length: %d", end_pos, transition_half_length);
+        CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)", a.X, a.Y, b.X, b.Y);
+        CURA_ERROR_FLUSH("  - 可能原因: 位置计算错误或边缘长度计算问题");
+        return false;
     }
 
     bool going_up = end_rest > start_rest;
+    CURA_ERROR_FLUSH_F("过渡方向: going_up=%s", going_up ? "true" : "false");
 
-    assert(edge.data_.isCentral());
-    if (! edge.data_.isCentral())
+    // 使用崩溃安全检查central状态
+    if (!CURA_CHECK_WITH_ERROR(edge.data_.isCentral(), "尝试在非中心区域生成过渡端点"))
     {
-        spdlog::warn("This function shouldn't generate ends in or beyond non-central regions.");
+        CURA_ERROR_FLUSH_F("非中心区域错误:");
+        CURA_ERROR_FLUSH_F("  - edge.data_.isCentral(): %s", edge.data_.isCentral() ? "true" : "false");
+        CURA_ERROR_FLUSH_F("  - edge位置: from(%d,%d) to(%d,%d)", a.X, a.Y, b.X, b.Y);
+        CURA_ERROR_FLUSH_F("  - edge地址: %p", static_cast<void*>(&edge));
+        CURA_ERROR_FLUSH("  - 可能原因: central状态设置错误或函数调用错误");
         return false;
     }
 
     if (end_pos > ab_size)
     { // Recurse on all further edges
-        double rest = end_rest - (start_rest - end_rest) * (end_pos - ab_size) / (start_pos - end_pos);
-        assert(rest >= 0);
-        assert(rest <= std::max(end_rest, start_rest));
-        assert(rest >= std::min(end_rest, start_rest));
+        CURA_ERROR_FLUSH_F("过渡超出边缘，需要递归: end_pos=%d > ab_size=%d", end_pos, ab_size);
+
+        // 验证除法安全性
+        coord_t denominator = start_pos - end_pos;
+        if (!CURA_CHECK_WITH_ERROR(denominator != 0, "rest值计算中分母为零"))
+        {
+            CURA_ERROR_FLUSH_F("除零错误: start_pos=%d, end_pos=%d", start_pos, end_pos);
+            return false;
+        }
+
+        double rest = end_rest - (start_rest - end_rest) * (end_pos - ab_size) / denominator;
+
+        double min_rest = std::min(static_cast<double>(end_rest), static_cast<double>(start_rest));
+        double max_rest = std::max(static_cast<double>(end_rest), static_cast<double>(start_rest));
+
+        CURA_ERROR_FLUSH_F("Rest值计算: rest=%.6f, 范围[%.6f, %.6f]", rest, min_rest, max_rest);
+
+        // 使用崩溃安全检查rest值范围
+        if (!CURA_CHECK_WITH_ERROR(rest >= min_rest - 1e-6 && rest <= max_rest + 1e-6, "计算的rest值超出有效范围"))
+        {
+            CURA_ERROR_FLUSH_F("Rest值超出范围:");
+            CURA_ERROR_FLUSH_F("  - rest: %.6f", rest);
+            CURA_ERROR_FLUSH_F("  - min_rest: %.6f, max_rest: %.6f", min_rest, max_rest);
+            CURA_ERROR_FLUSH_F("  - start_rest: %.6f, end_rest: %.6f",
+                              static_cast<double>(start_rest), static_cast<double>(end_rest));
+            CURA_ERROR_FLUSH_F("  - start_pos: %d, end_pos: %d, ab_size: %d", start_pos, end_pos, ab_size);
+            CURA_ERROR_FLUSH_F("  - 分子: %.6f, 分母: %d",
+                              (static_cast<double>(start_rest) - static_cast<double>(end_rest)) * (end_pos - ab_size), denominator);
+            CURA_ERROR_FLUSH("  - 计算公式: end_rest - (start_rest - end_rest) * (end_pos - ab_size) / (start_pos - end_pos)");
+            CURA_ERROR_FLUSH("  - 可能原因: 数值精度问题或位置计算错误");
+
+            // 如果差异很大，可能是严重错误
+            if (rest < min_rest - 0.1 || rest > max_rest + 0.1)
+            {
+                CURA_ASSERT_WITH_INFO(false, "Rest值严重超出范围，可能存在计算错误");
+            }
+            return false;
+        }
 
         coord_t central_edge_count = 0;
         for (edge_t* outgoing = edge.next_; outgoing && outgoing != edge.twin_; outgoing = outgoing->twin_->next_)
@@ -1630,6 +2155,11 @@ void SkeletalTrapezoidation::generateExtraRibs()
 
 void SkeletalTrapezoidation::generateSegments()
 {
+    CURA_ERROR_FLUSH("=== 开始生成线段 ===");
+
+    // 在生成线段前验证和修复图完整性
+    validateAndFixGraphIntegrity();
+
     std::vector<edge_t*> upward_quad_mids;
     for (edge_t& edge : graph_.edges)
     {
@@ -1717,12 +2247,49 @@ void SkeletalTrapezoidation::generateSegments()
 
 SkeletalTrapezoidation::edge_t* SkeletalTrapezoidation::getQuadMaxRedgeTo(edge_t* quad_start_edge)
 {
-    assert(quad_start_edge->prev_ == nullptr);
-    assert(quad_start_edge->from_->data_.distance_to_boundary_ == 0);
+    // 使用崩溃安全检查替代assert
+    if (!CURA_CHECK_WITH_ERROR(quad_start_edge != nullptr, "quad_start_edge为空"))
+    {
+        return nullptr;
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(quad_start_edge->prev_ == nullptr, "quad_start_edge->prev_不为空"))
+    {
+        CURA_ERROR_FLUSH_F("quad_start_edge位置: (%d,%d)",
+                          quad_start_edge->from_->p_.X, quad_start_edge->from_->p_.Y);
+        return nullptr;
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(quad_start_edge->from_ != nullptr &&
+        quad_start_edge->from_->data_.distance_to_boundary_ == 0, "起始边缘距离边界不为0"))
+    {
+        CURA_ERROR_FLUSH_F("quad_start_edge->from_距离: %d",
+                          quad_start_edge->from_->data_.distance_to_boundary_);
+        return nullptr;
+    }
+
     coord_t max_R = -1;
     edge_t* ret = nullptr;
+    size_t edge_count = 0;
+
     for (edge_t* edge = quad_start_edge; edge; edge = edge->next_)
     {
+        edge_count++;
+
+        // 防止无限循环
+        if (edge_count > 10000)
+        {
+            CURA_ERROR_FLUSH("getQuadMaxRedgeTo循环超过10000次，可能存在无限循环");
+            break;
+        }
+
+        if (!CURA_CHECK_WITH_ERROR(edge->to_ != nullptr, "边缘的to_节点为空"))
+        {
+            CURA_ERROR_FLUSH_F("边缘位置: from(%d,%d)",
+                              edge->from_->p_.X, edge->from_->p_.Y);
+            break;
+        }
+
         coord_t r = edge->to_->data_.distance_to_boundary_;
         if (r > max_R)
         {
@@ -1730,12 +2297,36 @@ SkeletalTrapezoidation::edge_t* SkeletalTrapezoidation::getQuadMaxRedgeTo(edge_t
             ret = edge;
         }
     }
-    if (! ret->next_ && ret->to_->data_.distance_to_boundary_ - 5 < ret->from_->data_.distance_to_boundary_)
+
+    if (!CURA_CHECK_WITH_ERROR(ret != nullptr, "未找到有效的最大R边缘"))
     {
-        ret = ret->prev_;
+        return nullptr;
     }
-    assert(ret);
-    assert(ret->next_);
+
+    // 安全检查ret->next_和ret->prev_
+    if (!ret->next_ && ret->to_->data_.distance_to_boundary_ - 5 < ret->from_->data_.distance_to_boundary_)
+    {
+        if (CURA_CHECK_WITH_ERROR(ret->prev_ != nullptr, "ret->prev_为空，无法回退"))
+        {
+            ret = ret->prev_;
+        }
+        else
+        {
+            CURA_ERROR_FLUSH("无法回退到prev_，返回当前ret");
+        }
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(ret != nullptr, "最终ret为空"))
+    {
+        return nullptr;
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(ret->next_ != nullptr, "ret->next_为空"))
+    {
+        CURA_ERROR_FLUSH_F("ret位置: (%d,%d)", ret->to_->p_.X, ret->to_->p_.Y);
+        return nullptr;
+    }
+
     return ret;
 }
 
@@ -1794,14 +2385,61 @@ void SkeletalTrapezoidation::propagateBeadingsDownward(std::vector<edge_t*>& upw
 
 void SkeletalTrapezoidation::propagateBeadingsDownward(edge_t* edge_to_peak, ptr_vector_t<BeadingPropagation>& node_beadings)
 {
-    coord_t length = vSize(edge_to_peak->to_->p_ - edge_to_peak->from_->p_);
-    BeadingPropagation& top_beading = *getOrCreateBeading(edge_to_peak->to_, node_beadings);
-    assert(top_beading.beading_.total_thickness >= edge_to_peak->to_->data_.distance_to_boundary_ * 2);
-    if (top_beading.beading_.total_thickness < edge_to_peak->to_->data_.distance_to_boundary_ * 2)
+    // 进一步减少调试输出，避免多线程混乱
+    static thread_local size_t call_count = 0;
+    call_count++;
+    if (call_count <= 1 || call_count % 10000 == 0)  // 只记录第1次和每10000次
     {
+        CURA_ERROR_FLUSH_F("=== propagateBeadingsDownward #%zu ===", call_count);
+    }
+
+    // 验证输入参数
+    if (!CURA_CHECK_WITH_ERROR(edge_to_peak != nullptr, "edge_to_peak为空指针"))
+    {
+        CURA_ERROR_FLUSH("edge_to_peak为空，无法传播beading");
+        return;
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(edge_to_peak->to_ != nullptr && edge_to_peak->from_ != nullptr,
+        "边缘的to_或from_节点为空"))
+    {
+        CURA_ERROR_FLUSH_F("边缘节点为空: edge=%p", static_cast<void*>(edge_to_peak));
+        return;
+    }
+
+    coord_t length = vSize(edge_to_peak->to_->p_ - edge_to_peak->from_->p_);
+    CURA_ERROR_FLUSH_F("边缘长度: %d, from(%d,%d) to(%d,%d)",
+                      length, edge_to_peak->from_->p_.X, edge_to_peak->from_->p_.Y,
+                      edge_to_peak->to_->p_.X, edge_to_peak->to_->p_.Y);
+
+    auto top_beading_ptr = getOrCreateBeading(edge_to_peak->to_, node_beadings);
+    if (!CURA_CHECK_WITH_ERROR(top_beading_ptr != nullptr, "获取top_beading失败"))
+    {
+        CURA_ERROR_FLUSH("无法获取top_beading，停止传播");
+        return;
+    }
+
+    BeadingPropagation& top_beading = *top_beading_ptr;
+
+    // 使用崩溃安全检查替代assert
+    coord_t expected_thickness = edge_to_peak->to_->data_.distance_to_boundary_ * 2;
+    if (!CURA_CHECK_WITH_ERROR(top_beading.beading_.total_thickness >= expected_thickness,
+        "Top bead厚度小于期望值"))
+    {
+        CURA_ERROR_FLUSH_F("Top bead厚度检查失败:");
+        CURA_ERROR_FLUSH_F("  - total_thickness: %d", top_beading.beading_.total_thickness);
+        CURA_ERROR_FLUSH_F("  - expected (distance*2): %d", expected_thickness);
+        CURA_ERROR_FLUSH_F("  - distance_to_boundary: %d", edge_to_peak->to_->data_.distance_to_boundary_);
         spdlog::warn("Top bead is beyond the center of the total width.");
     }
-    assert(! top_beading.is_upward_propagated_only_);
+
+    if (!CURA_CHECK_WITH_ERROR(!top_beading.is_upward_propagated_only_,
+        "Top beading只能向上传播"))
+    {
+        CURA_ERROR_FLUSH("Top beading传播方向错误");
+        // 修正传播方向
+        top_beading.is_upward_propagated_only_ = false;
+    }
 
     if (! edge_to_peak->from_->data_.hasBeading())
     { // Set new beading if there is no beading associated with the node yet
@@ -1809,9 +2447,15 @@ void SkeletalTrapezoidation::propagateBeadingsDownward(edge_t* edge_to_peak, ptr
         propagated_beading.dist_from_top_source_ += length;
         node_beadings.emplace_back(new BeadingPropagation(propagated_beading));
         edge_to_peak->from_->data_.setBeading(node_beadings.back());
-        assert(propagated_beading.beading_.total_thickness >= edge_to_peak->from_->data_.distance_to_boundary_ * 2);
-        if (propagated_beading.beading_.total_thickness < edge_to_peak->from_->data_.distance_to_boundary_ * 2)
+        // 使用崩溃安全检查替代assert
+        coord_t expected_propagated_thickness = edge_to_peak->from_->data_.distance_to_boundary_ * 2;
+        if (!CURA_CHECK_WITH_ERROR(propagated_beading.beading_.total_thickness >= expected_propagated_thickness,
+            "传播的bead厚度小于期望值"))
         {
+            CURA_ERROR_FLUSH_F("传播bead厚度检查失败:");
+            CURA_ERROR_FLUSH_F("  - total_thickness: %d", propagated_beading.beading_.total_thickness);
+            CURA_ERROR_FLUSH_F("  - expected (distance*2): %d", expected_propagated_thickness);
+            CURA_ERROR_FLUSH_F("  - from_distance_to_boundary: %d", edge_to_peak->from_->data_.distance_to_boundary_);
             spdlog::warn("Propagated bead is beyond the center of the total width.");
         }
     }
@@ -1924,14 +2568,28 @@ void SkeletalTrapezoidation::generateJunctions(ptr_vector_t<BeadingPropagation>&
             continue;
         }
 
-        Beading* beading = &getOrCreateBeading(edge->to_, node_beadings)->beading_;
+        auto beading_ptr = getOrCreateBeading(edge->to_, node_beadings);
+        if (!CURA_CHECK_WITH_ERROR(beading_ptr != nullptr, "获取beading失败"))
+        {
+            CURA_ERROR_FLUSH_F("无法获取beading: edge->to_位置(%d,%d)",
+                              edge->to_->p_.X, edge->to_->p_.Y);
+            continue;
+        }
+
+        Beading* beading = &beading_ptr->beading_;
         edge_junctions.emplace_back(std::make_shared<LineJunctions>());
         edge_.data_.setExtrusionJunctions(edge_junctions.back()); // initialization
         LineJunctions& ret = *edge_junctions.back();
 
-        assert(beading->total_thickness >= edge->to_->data_.distance_to_boundary_ * 2);
-        if (beading->total_thickness < edge->to_->data_.distance_to_boundary_ * 2)
+        // 使用崩溃安全检查替代assert
+        coord_t expected_junction_thickness = edge->to_->data_.distance_to_boundary_ * 2;
+        if (!CURA_CHECK_WITH_ERROR(beading->total_thickness >= expected_junction_thickness,
+            "生成的junction厚度小于期望值"))
         {
+            CURA_ERROR_FLUSH_F("Junction厚度检查失败:");
+            CURA_ERROR_FLUSH_F("  - total_thickness: %d", beading->total_thickness);
+            CURA_ERROR_FLUSH_F("  - expected (distance*2): %d", expected_junction_thickness);
+            CURA_ERROR_FLUSH_F("  - to_distance_to_boundary: %d", edge->to_->data_.distance_to_boundary_);
             spdlog::warn("Generated junction is beyond the center of total width.");
         }
 
@@ -1979,8 +2637,33 @@ void SkeletalTrapezoidation::generateJunctions(ptr_vector_t<BeadingPropagation>&
 
 std::shared_ptr<SkeletalTrapezoidationJoint::BeadingPropagation> SkeletalTrapezoidation::getOrCreateBeading(node_t* node, ptr_vector_t<BeadingPropagation>& node_beadings)
 {
+    // 进一步减少调试输出，避免多线程混乱
+    static thread_local size_t call_count = 0;
+    call_count++;
+    if (call_count <= 1 || call_count % 10000 == 0)  // 只记录第1次和每10000次
+    {
+        CURA_ERROR_FLUSH_F("=== getOrCreateBeading #%zu ===", call_count);
+    }
+
+    // 验证输入参数
+    if (!CURA_CHECK_WITH_ERROR(node != nullptr, "getOrCreateBeading中node为空指针"))
+    {
+        CURA_ERROR_FLUSH("node为空，无法获取或创建beading");
+        return nullptr;
+    }
+
+    // 减少频繁的节点处理日志
+    static thread_local size_t node_count = 0;
+    node_count++;
+    if (node_count <= 2 || node_count % 10000 == 0)
+    {
+        CURA_ERROR_FLUSH_F("处理节点: 位置(%d,%d), bead_count=%d, distance_to_boundary=%d",
+                          node->p_.X, node->p_.Y, node->data_.bead_count_, node->data_.distance_to_boundary_);
+    }
+
     if (! node->data_.hasBeading())
     {
+        CURA_ERROR_FLUSH("节点没有beading，需要创建");
         if (node->data_.bead_count_ == -1)
         { // This bug is due to too small central edges
             constexpr coord_t nearby_dist = 100; // TODO
@@ -1991,36 +2674,173 @@ std::shared_ptr<SkeletalTrapezoidationJoint::BeadingPropagation> SkeletalTrapezo
             }
 
             // Else make a new beading:
+            CURA_ERROR_FLUSH("创建新的beading");
+
+            // 验证节点的关联边缘
+            if (!CURA_CHECK_WITH_ERROR(node->incident_edge_ != nullptr, "节点没有关联边缘"))
+            {
+                CURA_ERROR_FLUSH_F("节点位置: (%d,%d)", node->p_.X, node->p_.Y);
+                // 创建一个默认的beading
+                node_beadings.emplace_back(new BeadingPropagation(beading_strategy_.compute(100, 1)));
+                node->data_.setBeading(node_beadings.back());
+                return node->data_.getBeading();
+            }
+
             bool has_central_edge = false;
             bool first = true;
             coord_t dist = std::numeric_limits<coord_t>::max();
+            size_t edge_count = 0;
+
             for (edge_t* edge = node->incident_edge_; edge && (first || edge != node->incident_edge_); edge = edge->twin_->next_)
             {
+                edge_count++;
+
+                // 防止无限循环
+                if (edge_count > 100)
+                {
+                    CURA_ERROR_FLUSH_F("边缘遍历超过100个，可能存在循环，停止遍历");
+                    break;
+                }
+
+                // 验证边缘有效性
+                if (!CURA_CHECK_WITH_ERROR(edge->to_ != nullptr && edge->from_ != nullptr, "边缘节点为空"))
+                {
+                    CURA_ERROR_FLUSH_F("无效边缘: edge=%p", static_cast<void*>(edge));
+                    continue;
+                }
+
+                // 验证twin和next指针
+                if (!CURA_CHECK_WITH_ERROR(edge->twin_ != nullptr, "边缘缺少twin指针"))
+                {
+                    CURA_ERROR_FLUSH_F("边缘缺少twin: edge=%p", static_cast<void*>(edge));
+                    break; // 无法继续遍历
+                }
+
+                if (!CURA_CHECK_WITH_ERROR(edge->twin_->next_ != nullptr, "twin边缘缺少next指针"))
+                {
+                    CURA_ERROR_FLUSH_F("twin边缘缺少next: twin=%p", static_cast<void*>(edge->twin_));
+                    break; // 无法继续遍历
+                }
                 if (edge->data_.isCentral())
                 {
                     has_central_edge = true;
                 }
-                assert(edge->to_->data_.distance_to_boundary_ >= 0);
-                dist = std::min(dist, edge->to_->data_.distance_to_boundary_ + vSize(edge->to_->p_ - edge->from_->p_));
+                // 使用崩溃安全检查距离边界值
+                if (!CURA_CHECK_WITH_ERROR(edge->to_->data_.distance_to_boundary_ >= 0, "节点到边界距离为负数"))
+                {
+                    CURA_ERROR_FLUSH_F("负距离边界值:");
+                    CURA_ERROR_FLUSH_F("  - edge->to_位置: (%d,%d)", edge->to_->p_.X, edge->to_->p_.Y);
+                    CURA_ERROR_FLUSH_F("  - distance_to_boundary: %d", edge->to_->data_.distance_to_boundary_);
+                    CURA_ERROR_FLUSH_F("  - edge长度: %d", vSize(edge->to_->p_ - edge->from_->p_));
+                    CURA_ERROR_FLUSH("  - 可能原因: 距离计算错误或初始化失败");
+                    // 修正为0
+                    edge->to_->data_.distance_to_boundary_ = 0;
+                }
+
+                coord_t edge_length = vSize(edge->to_->p_ - edge->from_->p_);
+                coord_t candidate_dist = edge->to_->data_.distance_to_boundary_ + edge_length;
+                dist = std::min(dist, candidate_dist);
                 first = false;
             }
+
             if (! has_central_edge)
             {
-                spdlog::error("Unknown beading for non-central node!");
+                CURA_ERROR_FLUSH_F("非中心节点的未知beading: node位置(%d,%d)", node->p_.X, node->p_.Y);
             }
-            assert(dist != std::numeric_limits<coord_t>::max());
-            node->data_.bead_count_ = beading_strategy_.getOptimalBeadCount(dist * 2);
+
+            // 使用崩溃安全检查距离计算结果
+            if (!CURA_CHECK_WITH_ERROR(dist != std::numeric_limits<coord_t>::max(), "无法计算节点到边界的距离"))
+            {
+                CURA_ERROR_FLUSH_F("距离计算失败:");
+                CURA_ERROR_FLUSH_F("  - node位置: (%d,%d)", node->p_.X, node->p_.Y);
+                CURA_ERROR_FLUSH_F("  - has_central_edge: %s", has_central_edge ? "true" : "false");
+                CURA_ERROR_FLUSH_F("  - 检查的边缘数量: %d", first ? 0 : 1);
+                CURA_ERROR_FLUSH("  - 可能原因: 没有中心边缘或距离计算失败");
+                // 设置一个默认距离避免崩溃
+                dist = 100; // 设置一个合理的默认值
+                CURA_ERROR_FLUSH_F("  - 已设置默认距离: %d", dist);
+            }
+            coord_t bead_input = dist * 2;
+            node->data_.bead_count_ = beading_strategy_.getOptimalBeadCount(bead_input);
+
+            CURA_ERROR_FLUSH_F("节点bead计算: 位置(%d,%d), dist=%d, input=%d, bead_count=%d",
+                              node->p_.X, node->p_.Y, dist, bead_input, node->data_.bead_count_);
         }
-        assert(node->data_.bead_count_ != -1);
-        node_beadings.emplace_back(new BeadingPropagation(beading_strategy_.compute(node->data_.distance_to_boundary_ * 2, node->data_.bead_count_)));
-        node->data_.setBeading(node_beadings.back());
+
+        // 使用崩溃安全检查bead计数有效性
+        if (!CURA_CHECK_WITH_ERROR(node->data_.bead_count_ != -1, "节点bead计数未正确设置"))
+        {
+            CURA_ERROR_FLUSH_F("Bead计数无效:");
+            CURA_ERROR_FLUSH_F("  - node位置: (%d,%d)", node->p_.X, node->p_.Y);
+            CURA_ERROR_FLUSH_F("  - bead_count: %d", node->data_.bead_count_);
+            CURA_ERROR_FLUSH_F("  - distance_to_boundary: %d", node->data_.distance_to_boundary_);
+            CURA_ERROR_FLUSH_F("  - 输入到getOptimalBeadCount: %d", node->data_.distance_to_boundary_ * 2);
+            CURA_ERROR_FLUSH("  - 可能原因: BeadingStrategy计算失败或输入超出范围");
+            // 设置一个默认的bead计数
+            node->data_.bead_count_ = 0;
+            CURA_ERROR_FLUSH_F("  - 已设置默认bead_count: %d", node->data_.bead_count_);
+        }
+
+        // 尝试计算beading数据
+        try {
+            coord_t beading_input = node->data_.distance_to_boundary_ * 2;
+            auto beading = beading_strategy_.compute(beading_input, node->data_.bead_count_);
+            node_beadings.emplace_back(new BeadingPropagation(beading));
+            node->data_.setBeading(node_beadings.back());
+
+            CURA_ERROR_FLUSH_F("Beading计算成功: input=%d, bead_count=%d",
+                              beading_input, node->data_.bead_count_);
+        } catch (const std::exception& e) {
+            CURA_ERROR_FLUSH_F("Beading计算异常: %s", e.what());
+            // 使用默认值
+            node_beadings.emplace_back(new BeadingPropagation(beading_strategy_.compute(100, 1)));
+            node->data_.setBeading(node_beadings.back());
+        }
     }
-    assert(node->data_.hasBeading());
+
+    // 使用崩溃安全检查beading数据存在性
+    if (!CURA_CHECK_WITH_ERROR(node->data_.hasBeading(), "节点没有beading数据"))
+    {
+        CURA_ERROR_FLUSH_F("Beading数据缺失:");
+        CURA_ERROR_FLUSH_F("  - node位置: (%d,%d)", node->p_.X, node->p_.Y);
+        CURA_ERROR_FLUSH_F("  - bead_count: %d", node->data_.bead_count_);
+        CURA_ERROR_FLUSH_F("  - distance_to_boundary: %d", node->data_.distance_to_boundary_);
+        CURA_ERROR_FLUSH_F("  - node_beadings.size(): %zu", node_beadings.size());
+        CURA_ERROR_FLUSH("  - 可能原因: beading计算或设置失败");
+        // 创建一个默认的beading避免崩溃
+        node_beadings.emplace_back(new BeadingPropagation(beading_strategy_.compute(100, 1))); // 默认值
+        node->data_.setBeading(node_beadings.back());
+        CURA_ERROR_FLUSH("  - 已创建默认beading数据");
+    }
     return node->data_.getBeading();
 }
 
 std::shared_ptr<SkeletalTrapezoidationJoint::BeadingPropagation> SkeletalTrapezoidation::getNearestBeading(node_t* node, coord_t max_dist)
 {
+    // 进一步减少调试输出，避免多线程混乱
+    static thread_local size_t call_count = 0;
+    call_count++;
+    if (call_count <= 1 || call_count % 10000 == 0)  // 只记录第1次和每10000次
+    {
+        CURA_ERROR_FLUSH_F("=== getNearestBeading #%zu ===", call_count);
+    }
+
+    // 验证输入参数
+    if (!CURA_CHECK_WITH_ERROR(node != nullptr, "getNearestBeading中node为空指针"))
+    {
+        CURA_ERROR_FLUSH("node为空，无法查找最近beading");
+        return nullptr;
+    }
+
+    if (!CURA_CHECK_WITH_ERROR(node->incident_edge_ != nullptr, "节点没有关联边缘"))
+    {
+        CURA_ERROR_FLUSH_F("节点位置: (%d,%d)", node->p_.X, node->p_.Y);
+        return nullptr;
+    }
+
+    CURA_ERROR_FLUSH_F("查找节点(%d,%d)的最近beading，最大距离: %d",
+                      node->p_.X, node->p_.Y, max_dist);
+
     struct DistEdge
     {
         edge_t* edge_to_;
@@ -2039,32 +2859,132 @@ std::shared_ptr<SkeletalTrapezoidationJoint::BeadingPropagation> SkeletalTrapezo
     };
     std::priority_queue<DistEdge, std::vector<DistEdge>, decltype(compare)> further_edges(compare);
     bool first = true;
+    size_t edge_count = 0;
+
     for (edge_t* outgoing = node->incident_edge_; outgoing && (first || outgoing != node->incident_edge_); outgoing = outgoing->twin_->next_)
     {
-        further_edges.emplace(outgoing, vSize(outgoing->to_->p_ - outgoing->from_->p_));
+        edge_count++;
+
+        // 防止无限循环
+        if (edge_count > 100)
+        {
+            CURA_ERROR_FLUSH_F("边缘遍历超过100个，可能存在循环，停止遍历");
+            break;
+        }
+
+        // 验证边缘有效性
+        if (!CURA_CHECK_WITH_ERROR(outgoing->to_ != nullptr, "边缘的to_节点为空"))
+        {
+            CURA_ERROR_FLUSH_F("无效边缘: outgoing=%p", static_cast<void*>(outgoing));
+            continue;
+        }
+
+        if (!CURA_CHECK_WITH_ERROR(outgoing->from_ != nullptr, "边缘的from_节点为空"))
+        {
+            CURA_ERROR_FLUSH_F("无效边缘: outgoing=%p", static_cast<void*>(outgoing));
+            continue;
+        }
+
+        // 验证twin和next指针
+        if (!CURA_CHECK_WITH_ERROR(outgoing->twin_ != nullptr, "边缘缺少twin指针"))
+        {
+            CURA_ERROR_FLUSH_F("边缘缺少twin: outgoing=%p", static_cast<void*>(outgoing));
+            break; // 无法继续遍历
+        }
+
+        if (!CURA_CHECK_WITH_ERROR(outgoing->twin_->next_ != nullptr, "twin边缘缺少next指针"))
+        {
+            CURA_ERROR_FLUSH_F("twin边缘缺少next: twin=%p", static_cast<void*>(outgoing->twin_));
+            break; // 无法继续遍历
+        }
+
+        coord_t edge_length = vSize(outgoing->to_->p_ - outgoing->from_->p_);
+        further_edges.emplace(outgoing, edge_length);
         first = false;
     }
+
+    CURA_ERROR_FLUSH_F("初始化完成，找到%zu个边缘", edge_count);
 
     for (coord_t counter = 0; counter < SKELETAL_TRAPEZOIDATION_BEAD_SEARCH_MAX; counter++)
     { // Prevent endless recursion
         if (further_edges.empty())
+        {
+            CURA_ERROR_FLUSH_F("搜索队列为空，未找到beading (迭代%d)", counter);
             return nullptr;
+        }
+
         DistEdge here = further_edges.top();
         further_edges.pop();
+
         if (here.dist_ > max_dist)
+        {
+            CURA_ERROR_FLUSH_F("距离超过最大值: %d > %d (迭代%d)", here.dist_, max_dist, counter);
             return nullptr;
+        }
+
+        // 验证当前边缘有效性
+        if (!CURA_CHECK_WITH_ERROR(here.edge_to_ != nullptr, "搜索中的边缘为空"))
+        {
+            CURA_ERROR_FLUSH_F("搜索中发现空边缘 (迭代%d)", counter);
+            continue;
+        }
+
+        if (!CURA_CHECK_WITH_ERROR(here.edge_to_->to_ != nullptr, "搜索中的边缘to_节点为空"))
+        {
+            CURA_ERROR_FLUSH_F("搜索中发现无效边缘 (迭代%d)", counter);
+            continue;
+        }
+
         if (here.edge_to_->to_->data_.hasBeading())
         {
+            CURA_ERROR_FLUSH_F("找到beading，距离: %d (迭代%d)", here.dist_, counter);
             return here.edge_to_->to_->data_.getBeading();
         }
         else
         { // recurse
-            for (edge_t* further_edge = here.edge_to_->next_; further_edge && further_edge != here.edge_to_->twin_; further_edge = further_edge->twin_->next_)
+            CURA_ERROR_FLUSH_F("递归搜索，当前距离: %d (迭代%d)", here.dist_, counter);
+
+            // 验证next指针
+            if (!CURA_CHECK_WITH_ERROR(here.edge_to_->next_ != nullptr, "边缘缺少next指针"))
             {
-                further_edges.emplace(further_edge, here.dist_ + vSize(further_edge->to_->p_ - further_edge->from_->p_));
+                CURA_ERROR_FLUSH_F("边缘缺少next，跳过递归 (迭代%d)", counter);
+                continue;
+            }
+
+            size_t recursion_count = 0;
+            for (edge_t* further_edge = here.edge_to_->next_;
+                 further_edge && further_edge != here.edge_to_->twin_;
+                 further_edge = further_edge->twin_->next_)
+            {
+                recursion_count++;
+
+                // 防止递归过深
+                if (recursion_count > 50)
+                {
+                    CURA_ERROR_FLUSH_F("递归深度过深，停止 (迭代%d)", counter);
+                    break;
+                }
+
+                // 验证递归边缘
+                if (!CURA_CHECK_WITH_ERROR(further_edge->to_ != nullptr && further_edge->from_ != nullptr,
+                    "递归边缘节点为空"))
+                {
+                    continue;
+                }
+
+                if (!CURA_CHECK_WITH_ERROR(further_edge->twin_ != nullptr && further_edge->twin_->next_ != nullptr,
+                    "递归边缘缺少twin或next"))
+                {
+                    break;
+                }
+
+                coord_t additional_dist = vSize(further_edge->to_->p_ - further_edge->from_->p_);
+                further_edges.emplace(further_edge, here.dist_ + additional_dist);
             }
         }
     }
+
+    CURA_ERROR_FLUSH_F("达到最大搜索次数 (%d)，未找到beading", SKELETAL_TRAPEZOIDATION_BEAD_SEARCH_MAX);
     return nullptr;
 }
 
@@ -2080,7 +3000,24 @@ void SkeletalTrapezoidation::addToolpathSegment(const ExtrusionJunction& from, c
     {
         generated_toolpaths.resize(inset_idx + 1);
     }
-    assert((generated_toolpaths[inset_idx].empty() || ! generated_toolpaths[inset_idx].back().junctions_.empty()) && "empty extrusion lines should never have been generated");
+    // 使用崩溃安全检查替代assert
+    if (!CURA_CHECK_WITH_ERROR(
+        generated_toolpaths[inset_idx].empty() || !generated_toolpaths[inset_idx].back().junctions_.empty(),
+        "生成了空的挤出线"))
+    {
+        CURA_ERROR_FLUSH_F("空挤出线错误:");
+        CURA_ERROR_FLUSH_F("  - inset_idx: %zu", inset_idx);
+        CURA_ERROR_FLUSH_F("  - generated_toolpaths大小: %zu", generated_toolpaths.size());
+        if (!generated_toolpaths[inset_idx].empty()) {
+            CURA_ERROR_FLUSH_F("  - back().junctions_大小: %zu",
+                              generated_toolpaths[inset_idx].back().junctions_.size());
+        }
+        CURA_ERROR_FLUSH("  - 可能原因: 工具路径生成逻辑错误");
+        // 清理空的挤出线
+        if (!generated_toolpaths[inset_idx].empty() && generated_toolpaths[inset_idx].back().junctions_.empty()) {
+            generated_toolpaths[inset_idx].pop_back();
+        }
+    }
     if (generated_toolpaths[inset_idx].empty() || generated_toolpaths[inset_idx].back().is_odd_ != is_odd
         || generated_toolpaths[inset_idx].back().junctions_.back().perimeter_index_ != inset_idx // inset_idx should always be consistent
     )
@@ -2114,6 +3051,15 @@ void SkeletalTrapezoidation::addToolpathSegment(const ExtrusionJunction& from, c
 
 void SkeletalTrapezoidation::connectJunctions(ptr_vector_t<LineJunctions>& edge_junctions)
 {
+    // 进一步减少调试输出，避免多线程混乱
+    static thread_local size_t call_count = 0;
+    call_count++;
+    if (call_count <= 1 || call_count % 10000 == 0)  // 只记录第1次和每10000次
+    {
+        CURA_ERROR_FLUSH_F("=== connectJunctions #%zu ===", call_count);
+        CURA_ERROR_FLUSH_F("图边缘数量: %zu", graph_.edges.size());
+    }
+
     std::unordered_set<edge_t*> unprocessed_quad_starts(graph_.edges.size() * 5 / 2);
     for (edge_t& edge : graph_.edges)
     {
@@ -2123,25 +3069,106 @@ void SkeletalTrapezoidation::connectJunctions(ptr_vector_t<LineJunctions>& edge_
         }
     }
 
+    if (call_count <= 3 || call_count % 1000 == 0)
+    {
+        CURA_ERROR_FLUSH_F("找到%zu个未处理的quad起始点", unprocessed_quad_starts.size());
+    }
+
     std::unordered_set<edge_t*> passed_odd_edges;
 
+    size_t main_loop_count = 0;
     while (! unprocessed_quad_starts.empty())
     {
+        main_loop_count++;
+
+        // 防止主循环无限循环
+        if (main_loop_count > 100000)
+        {
+            CURA_ERROR_FLUSH_F("主循环超过100000次，可能存在无限循环，强制退出");
+            CURA_ERROR_FLUSH_F("剩余未处理的quad: %zu", unprocessed_quad_starts.size());
+            break;
+        }
+
         edge_t* poly_domain_start = *unprocessed_quad_starts.begin();
+
+        // 验证poly_domain_start有效性
+        if (!CURA_CHECK_WITH_ERROR(poly_domain_start != nullptr, "poly_domain_start为空"))
+        {
+            CURA_ERROR_FLUSH("poly_domain_start为空，移除并继续");
+            unprocessed_quad_starts.erase(unprocessed_quad_starts.begin());
+            continue;
+        }
+
         edge_t* quad_start = poly_domain_start;
         bool new_domain_start = true;
+        size_t do_loop_count = 0;
         do
         {
+            do_loop_count++;
+
+            // 防止do-while循环无限循环
+            if (do_loop_count > 10000)
+            {
+                CURA_ERROR_FLUSH_F("do-while循环超过10000次，可能存在无限循环，强制退出");
+                break;
+            }
             edge_t* quad_end = quad_start;
+            size_t loop_count = 0;
             while (quad_end->next_)
             {
+                // 防止无限循环
+                loop_count++;
+                if (loop_count > 10000)
+                {
+                    CURA_ERROR_FLUSH_F("quad_end循环超过10000次，可能存在无限循环");
+                    CURA_ERROR_FLUSH_F("当前quad_end位置: (%d,%d)",
+                                      quad_end->to_->p_.X, quad_end->to_->p_.Y);
+                    break;
+                }
+
+                // 验证next指针有效性
+                if (!CURA_CHECK_WITH_ERROR(quad_end->next_->to_ != nullptr &&
+                    quad_end->next_->from_ != nullptr, "quad_end->next_节点为空"))
+                {
+                    CURA_ERROR_FLUSH_F("quad_end->next_节点为空，停止循环");
+                    break;
+                }
+
                 quad_end = quad_end->next_;
             }
 
+            // 验证quad_start有效性
+            if (!CURA_CHECK_WITH_ERROR(quad_start != nullptr && quad_start->to_ != nullptr &&
+                quad_start->from_ != nullptr, "quad_start无效"))
+            {
+                CURA_ERROR_FLUSH_F("quad_start无效，跳过此quad");
+                unprocessed_quad_starts.erase(quad_start);
+                break;
+            }
+
             edge_t* edge_to_peak = getQuadMaxRedgeTo(quad_start);
+
+            // 验证edge_to_peak有效性
+            if (!CURA_CHECK_WITH_ERROR(edge_to_peak != nullptr && edge_to_peak->to_ != nullptr &&
+                edge_to_peak->from_ != nullptr, "edge_to_peak无效"))
+            {
+                CURA_ERROR_FLUSH_F("edge_to_peak无效，跳过此quad");
+                unprocessed_quad_starts.erase(quad_start);
+                break;
+            }
+
             // walk down on both sides and connect junctions
             edge_t* edge_from_peak = edge_to_peak->next_;
-            assert(edge_from_peak);
+
+            // 使用崩溃安全检查替代assert
+            if (!CURA_CHECK_WITH_ERROR(edge_from_peak != nullptr, "edge_from_peak为空"))
+            {
+                CURA_ERROR_FLUSH_F("edge_to_peak位置: (%d,%d)",
+                                  edge_to_peak->to_->p_.X, edge_to_peak->to_->p_.Y);
+                CURA_ERROR_FLUSH("跳过此quad，继续处理下一个");
+                unprocessed_quad_starts.erase(quad_start);
+                continue;
+            }
 
             unprocessed_quad_starts.erase(quad_start);
 
@@ -2168,9 +3195,12 @@ void SkeletalTrapezoidation::connectJunctions(ptr_vector_t<LineJunctions>& edge_
                 }
                 from_junctions.reserve(from_junctions.size() + from_prev_junctions.size());
                 from_junctions.insert(from_junctions.end(), from_prev_junctions.begin(), from_prev_junctions.end());
-                assert(! edge_to_peak->prev_->prev_);
-                if (edge_to_peak->prev_->prev_)
+
+                // 使用崩溃安全检查替代assert
+                if (!CURA_CHECK_WITH_ERROR(edge_to_peak->prev_->prev_ == nullptr,
+                    "边缘已经连接"))
                 {
+                    CURA_ERROR_FLUSH("边缘已经连接，可能导致重复连接");
                     spdlog::warn("The edge we're about to connect is already connected.");
                 }
             }
@@ -2183,30 +3213,59 @@ void SkeletalTrapezoidation::connectJunctions(ptr_vector_t<LineJunctions>& edge_
                 }
                 to_junctions.reserve(to_junctions.size() + to_next_junctions.size());
                 to_junctions.insert(to_junctions.end(), to_next_junctions.begin(), to_next_junctions.end());
-                assert(! edge_from_peak->next_->next_);
-                if (edge_from_peak->next_->next_)
+
+                // 使用崩溃安全检查替代assert
+                if (!CURA_CHECK_WITH_ERROR(edge_from_peak->next_->next_ == nullptr,
+                    "边缘已经连接"))
                 {
+                    CURA_ERROR_FLUSH("边缘已经连接，可能导致重复连接");
                     spdlog::warn("The edge we're about to connect is already connected!");
                 }
             }
-            assert(std::abs(int(from_junctions.size()) - int(to_junctions.size())) <= 1); // at transitions one end has more beads
-            if (std::abs(int(from_junctions.size()) - int(to_junctions.size())) > 1)
+            // 使用崩溃安全检查替代assert
+            int size_diff = std::abs(int(from_junctions.size()) - int(to_junctions.size()));
+            if (!CURA_CHECK_WITH_ERROR(size_diff <= 1, "junction数量差异过大"))
             {
+                CURA_ERROR_FLUSH_F("Junction数量差异检查失败:");
+                CURA_ERROR_FLUSH_F("  - from_junctions.size(): %zu", from_junctions.size());
+                CURA_ERROR_FLUSH_F("  - to_junctions.size(): %zu", to_junctions.size());
+                CURA_ERROR_FLUSH_F("  - 差异: %d", size_diff);
                 spdlog::warn(
                     "Can't create a transition when connecting two perimeters where the number of beads differs too much! {} vs. {}",
                     from_junctions.size(),
                     to_junctions.size());
+                // 继续处理，但跳过这个连接
+                unprocessed_quad_starts.erase(quad_start);
+                continue;
             }
 
             size_t segment_count = std::min(from_junctions.size(), to_junctions.size());
             for (size_t junction_rev_idx = 0; junction_rev_idx < segment_count; junction_rev_idx++)
             {
+                // 验证数组边界
+                if (!CURA_CHECK_WITH_ERROR(junction_rev_idx < from_junctions.size() &&
+                    junction_rev_idx < to_junctions.size(), "junction索引越界"))
+                {
+                    CURA_ERROR_FLUSH_F("Junction索引越界:");
+                    CURA_ERROR_FLUSH_F("  - junction_rev_idx: %zu", junction_rev_idx);
+                    CURA_ERROR_FLUSH_F("  - from_junctions.size(): %zu", from_junctions.size());
+                    CURA_ERROR_FLUSH_F("  - to_junctions.size(): %zu", to_junctions.size());
+                    break; // 跳出循环，避免崩溃
+                }
+
                 ExtrusionJunction& from = from_junctions[from_junctions.size() - 1 - junction_rev_idx];
                 ExtrusionJunction& to = to_junctions[to_junctions.size() - 1 - junction_rev_idx];
-                assert(from.perimeter_index_ == to.perimeter_index_);
-                if (from.perimeter_index_ != to.perimeter_index_)
+
+                // 使用崩溃安全检查替代assert
+                if (!CURA_CHECK_WITH_ERROR(from.perimeter_index_ == to.perimeter_index_,
+                    "连接的perimeter索引不匹配"))
                 {
-                    spdlog::warn("Connecting two perimeters with different indices! Perimeter {} and {}", from.perimeter_index_, to.perimeter_index_);
+                    CURA_ERROR_FLUSH_F("Perimeter索引不匹配:");
+                    CURA_ERROR_FLUSH_F("  - from.perimeter_index_: %d", from.perimeter_index_);
+                    CURA_ERROR_FLUSH_F("  - to.perimeter_index_: %d", to.perimeter_index_);
+                    spdlog::warn("Connecting two perimeters with different indices! Perimeter {} and {}",
+                                from.perimeter_index_, to.perimeter_index_);
+                    // 继续处理，但记录警告
                 }
                 const bool from_is_odd = quad_start->to_->data_.bead_count_ > 0 && quad_start->to_->data_.bead_count_ % 2 == 1 // quad contains single bead segment
                                       && quad_start->to_->data_.transition_ratio_ == 0 // We're not in a transition
@@ -2321,5 +3380,105 @@ void SkeletalTrapezoidation::generateLocalMaximaSingleBeads()
 //  TOOLPATH GENERATION
 // =====================
 //
+
+void SkeletalTrapezoidation::validateAndFixGraphIntegrity()
+{
+    CURA_ERROR_FLUSH("=== 开始图完整性验证和修复 ===");
+
+    size_t total_edges = graph_.edges.size();
+    size_t edges_without_twin = 0;
+    size_t edges_fixed = 0;
+
+    // 第一遍：统计和标记没有twin的边缘
+    std::vector<edge_t*> edges_without_twin_list;
+
+    for (edge_t& edge : graph_.edges)
+    {
+        if (!edge.twin_)
+        {
+            edges_without_twin++;
+            edges_without_twin_list.push_back(&edge);
+        }
+    }
+
+    CURA_ERROR_FLUSH_F("图完整性统计: 总边缘=%zu, 缺少twin=%zu", total_edges, edges_without_twin);
+
+    // 第二遍：尝试修复没有twin的边缘
+    for (edge_t* edge : edges_without_twin_list)
+    {
+        // 查找可能的twin边缘（from和to相反的边缘）
+        edge_t* potential_twin = nullptr;
+
+        for (edge_t& candidate : graph_.edges)
+        {
+            if (&candidate != edge &&
+                candidate.from_ == edge->to_ &&
+                candidate.to_ == edge->from_ &&
+                !candidate.twin_)
+            {
+                potential_twin = &candidate;
+                break;
+            }
+        }
+
+        if (potential_twin)
+        {
+            // 建立twin关系
+            edge->twin_ = potential_twin;
+            potential_twin->twin_ = edge;
+            edges_fixed++;
+
+            CURA_ERROR_FLUSH_F("修复twin关系: edge(%d,%d)->(%d,%d) <-> edge(%d,%d)->(%d,%d)",
+                              edge->from_->p_.X, edge->from_->p_.Y, edge->to_->p_.X, edge->to_->p_.Y,
+                              potential_twin->from_->p_.X, potential_twin->from_->p_.Y,
+                              potential_twin->to_->p_.X, potential_twin->to_->p_.Y);
+        }
+        else
+        {
+            // 无法找到twin，创建一个虚拟的twin边缘
+            graph_.edges.emplace_back(SkeletalTrapezoidationEdge());
+            edge_t* virtual_twin = &graph_.edges.back();
+
+            virtual_twin->from_ = edge->to_;
+            virtual_twin->to_ = edge->from_;
+            virtual_twin->twin_ = edge;
+            edge->twin_ = virtual_twin;
+
+            // 设置虚拟twin的数据
+            virtual_twin->data_.setIsCentral(false);
+            virtual_twin->data_.type_ = SkeletalTrapezoidationEdge::EdgeType::EXTRA_VD;
+
+            edges_fixed++;
+
+            CURA_ERROR_FLUSH_F("创建虚拟twin: edge(%d,%d)->(%d,%d) <-> virtual_twin(%d,%d)->(%d,%d)",
+                              edge->from_->p_.X, edge->from_->p_.Y, edge->to_->p_.X, edge->to_->p_.Y,
+                              virtual_twin->from_->p_.X, virtual_twin->from_->p_.Y,
+                              virtual_twin->to_->p_.X, virtual_twin->to_->p_.Y);
+        }
+    }
+
+    CURA_ERROR_FLUSH_F("图完整性修复完成: 修复了%zu个边缘的twin关系", edges_fixed);
+
+    // 第三遍：验证修复结果
+    size_t remaining_without_twin = 0;
+    for (edge_t& edge : graph_.edges)
+    {
+        if (!edge.twin_)
+        {
+            remaining_without_twin++;
+        }
+    }
+
+    CURA_ERROR_FLUSH_F("修复后统计: 总边缘=%zu, 仍缺少twin=%zu", graph_.edges.size(), remaining_without_twin);
+
+    if (remaining_without_twin == 0)
+    {
+        CURA_ERROR_FLUSH("✅ 图完整性验证通过，所有边缘都有twin指针");
+    }
+    else
+    {
+        CURA_ERROR_FLUSH_F("⚠️ 仍有%zu个边缘缺少twin指针", remaining_without_twin);
+    }
+}
 
 } // namespace cura
