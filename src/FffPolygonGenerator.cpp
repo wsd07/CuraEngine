@@ -1256,6 +1256,7 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
             std::vector<VariableWidthLines> result_paths;
             for (auto& toolpath : part.wall_toolpaths)
             {
+                if (toolpath.size() == 0) continue;
                 if (toolpath.front().inset_idx_ != 0)
                 {
                     result_paths.push_back(toolpath);
