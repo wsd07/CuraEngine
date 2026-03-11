@@ -230,7 +230,7 @@ bool InsetOrderOptimizer::addToLayer()
         if (line.is_closed_)
         {
             std::optional<size_t> force_start;
-            if (! settings_.get<bool>("z_seam_on_vertex"))
+            if (! settings_.get<bool>("z_seam_on_vertex") && line.inset_idx_ == 0)
             {
                 // If the user indicated that we may deviate from the vertices for the seam, we can insert a seam point, if needed.
                 force_start = insertSeamPoint(line);
