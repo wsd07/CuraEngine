@@ -3031,8 +3031,7 @@ void LayerPlan::spiralizeWallSlice(
         Point2LL join_first_wall_at = LinearAlg2D::getClosestOnLineSegment(origin, wall[seam_vertex_idx % wall.size()], wall[(seam_vertex_idx + 1) % wall.size()]);
         if (vSize(join_first_wall_at - origin) > 10)
         {
-            constexpr Ratio flow = 1.0_r;
-            addExtrusionMove(join_first_wall_at, config, SpaceFillType::Polygons, flow, width_factor, spiralize);
+            addTravel(join_first_wall_at);
         }
     }
 
