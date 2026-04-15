@@ -6,6 +6,7 @@
 #include <fstream> // ifstream.good()
 #include <map> // multimap (ordered map allowing duplicate keys)
 #include <numeric>
+#include <random>
 
 #include <spdlog/spdlog.h>
 
@@ -1184,7 +1185,17 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
                     Polygon fuzzy_polygon;
 
                     // 生成fuzzy点
-                    int64_t dist_left_over = (min_dist_between_points / 4) + rand() % (min_dist_between_points / 4);
+                    // 【修复】使用多边形起始点坐标作为随机种子，确保 vase 模式下每层同一位置
+                    // 的轮廓产生完全相同的随机序列与初始相位，从而消除层间可见分界线。
+                    const uint32_t poly_seed = static_cast<uint32_t>(
+                        static_cast<uint64_t>(spiral_polygon.front().X) * 2654435761ULL
+                        ^ static_cast<uint64_t>(spiral_polygon.front().Y) * 2246822519ULL);
+                    std::mt19937 poly_rng(poly_seed);
+                    auto poly_rand_dist = [&](int64_t range) -> int64_t
+                    {
+                        return (range > 0) ? static_cast<int64_t>(poly_rng() % static_cast<uint64_t>(range)) : 0LL;
+                    };
+                    int64_t dist_left_over = (min_dist_between_points / 4) + poly_rand_dist(min_dist_between_points / 4);
 
                     for (size_t i = 0; i < spiral_polygon.size(); ++i)
                     {
@@ -1209,9 +1220,9 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
                         }
 
                         // 在线段上生成fuzzy点
-                        for (; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + rand() % range_random_point_dist)
+                        for (; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + poly_rand_dist(range_random_point_dist))
                         {
-                            const int r = rand() % (fuzziness * 2) - fuzziness;
+                            const int r = static_cast<int>(poly_rand_dist(fuzziness * 2)) - fuzziness;
                             const Point2LL perp_to_p0p1 = turn90CCW(p0p1);
                             const Point2LL fuzz = normal(perp_to_p0p1, r);
                             const Point2LL pa = p0 + normal(p0p1, p0pa_dist);
@@ -1284,8 +1295,18 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
                     auto& result = result_lines.emplace_back(line.inset_idx_, line.is_odd_, line.is_closed_);
 
                     // generate points in between p0 and p1
+                    // 【修复】使用轮廓起始点坐标作为随机种子，确保 vase 模式下每层同一位置
+                    // 的轮廓产生完全相同的随机序列与初始相位，从而消除层间可见分界线。
+                    const uint32_t line_seed = static_cast<uint32_t>(
+                        static_cast<uint64_t>(line.front().p_.X) * 2654435761ULL
+                        ^ static_cast<uint64_t>(line.front().p_.Y) * 2246822519ULL);
+                    std::mt19937 line_rng(line_seed);
+                    auto line_rand_dist = [&](int64_t range) -> int64_t
+                    {
+                        return (range > 0) ? static_cast<int64_t>(line_rng() % static_cast<uint64_t>(range)) : 0LL;
+                    };
                     int64_t dist_left_over
-                        = (min_dist_between_points / 4) + rand() % (min_dist_between_points / 4); // the distance to be traversed on the line before making the first new point
+                        = (min_dist_between_points / 4) + line_rand_dist(min_dist_between_points / 4); // the distance to be traversed on the line before making the first new point
                     auto* p0 = &line.front();
                     for (auto& p1 : line)
                     {
@@ -1305,9 +1326,9 @@ void FffPolygonGenerator::processFuzzyWalls(SliceMeshStorage& mesh)
                             const double width = (p1.w_ * vSize(p1.p_ - p) + p0->w_ * vSize(p0->p_ - p)) / p0p1_size;
                             result.emplace_back(p, width, p1.perimeter_index_);
                         }
-                        for (; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + rand() % range_random_point_dist)
+                        for (; p0pa_dist < p0p1_size; p0pa_dist += min_dist_between_points + line_rand_dist(range_random_point_dist))
                         {
-                            const int r = rand() % (fuzziness * 2) - fuzziness;
+                            const int r = static_cast<int>(line_rand_dist(fuzziness * 2)) - fuzziness;
                             const Point2LL perp_to_p0p1 = turn90CCW(p0p1);
                             const Point2LL fuzz = normal(perp_to_p0p1, r);
                             const Point2LL pa = p0->p_ + normal(p0p1, p0pa_dist);
