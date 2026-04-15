@@ -2995,14 +2995,15 @@ void LayerPlan::spiralizeWallSlice(
     const int seam_vertex_idx,
     const int last_seam_vertex_idx,
     const bool is_top_layer,
-    const bool is_bottom_layer)
+    const bool is_bottom_layer,
+    const bool is_fuzzy_wall)
 {
     // 检查是否启用平滑螺旋Z坐标功能
     const bool smooth_spiralized_z = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_z");
 
-    // smooth_spiralized_contours只在smooth_spiralized_z=true时才有效
+    // smooth_spiralized_contours只在smooth_spiralized_z=true时才有效，如果是Fuzzy Skin，必须跳过XY插值，否则模糊特征会被抹平产生接缝
     const bool smooth_contours_setting = Application::getInstance().current_slice_->scene.current_mesh_group->settings.get<bool>("smooth_spiralized_contours");
-    const bool smooth_contours = smooth_spiralized_z && smooth_contours_setting;
+    const bool smooth_contours = smooth_spiralized_z && smooth_contours_setting && !is_fuzzy_wall;
 
     if (!smooth_spiralized_z && smooth_contours_setting)
     {
@@ -3031,7 +3032,8 @@ void LayerPlan::spiralizeWallSlice(
         Point2LL join_first_wall_at = LinearAlg2D::getClosestOnLineSegment(origin, wall[seam_vertex_idx % wall.size()], wall[(seam_vertex_idx + 1) % wall.size()]);
         if (vSize(join_first_wall_at - origin) > 10)
         {
-            addTravel(join_first_wall_at);
+            constexpr Ratio flow = 1.0_r;
+            addExtrusionMove(join_first_wall_at, config, SpaceFillType::Polygons, flow, width_factor, spiralize);
         }
     }
 

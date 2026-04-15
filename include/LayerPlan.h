@@ -827,7 +827,8 @@ public:
         int seam_vertex_idx,
         int last_seam_vertex_idx,
         const bool is_top_layer,
-        const bool is_bottom_layer);
+        const bool is_bottom_layer,
+        const bool is_fuzzy_wall = false);
 
     /*!
      * \brief 打印螺旋模式的加强圈

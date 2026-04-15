@@ -3195,7 +3195,8 @@ void FffGcodeWriter::processSpiralizedWall(
         else if (!is_bottom_layer)
         {
             // 主螺旋圈：使用正常的螺旋化逻辑
-            gcode_layer.spiralizeWallSlice(mesh_config.inset0_config, wall_outline, *last_wall_outline, seam_vertex_idx, last_seam_vertex_idx, is_top_layer, is_bottom_layer);
+            const bool is_fuzzy_wall = mesh.settings.get<bool>("magic_fuzzy_skin_enabled");
+            gcode_layer.spiralizeWallSlice(mesh_config.inset0_config, wall_outline, *last_wall_outline, seam_vertex_idx, last_seam_vertex_idx, is_top_layer, is_bottom_layer, is_fuzzy_wall);
 
             // 更新上一个结束点（主螺旋圈的结束点）
             if (!wall_outline.empty())
